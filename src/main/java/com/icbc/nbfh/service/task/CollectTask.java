@@ -16,6 +16,7 @@ import javax.annotation.PostConstruct;
 public class CollectTask {
 
     private final CollectService collectService;
+
     private final RegisterService registerService;
 
     public CollectTask(CollectService collectService,
@@ -26,23 +27,34 @@ public class CollectTask {
 
     @PostConstruct
     public void init() {
+
         Thread startupThread = new Thread(() -> {
             try {
                 Thread.sleep(2000);
+
                 if (registerService.registerIfNeeded()) {
                     collectService.collectAndReport();
                 }
+
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+
             } catch (Exception e) {
                 log.error("启动注册或首次指标上报失败", e);
             }
         }, "agent-startup-register");
+
         startupThread.start();
     }
 
-    @Scheduled(fixedDelayString = "${agent.collect-interval:300000}")
+    @Scheduled(
+            fixedDelayString =
+                    "${agent.schedule.collect-interval:300000}"
+    )
     public void collect() {
-        collectService.collectAndReport();
+
+        if (registerService.registerIfNeeded()) {
+            collectService.collectAndReport();
+        }
     }
 }

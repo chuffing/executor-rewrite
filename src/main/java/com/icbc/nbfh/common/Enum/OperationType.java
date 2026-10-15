@@ -1,4 +1,4 @@
-package com.icbc.nbfh.common.constant;
+package com.icbc.nbfh.common.Enum;
 
 
 /**

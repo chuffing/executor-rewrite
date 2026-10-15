@@ -1,4 +1,4 @@
-package com.icbc.nbfh.entity.dto;
+package com.icbc.nbfh.entity.DTO;
 
 import lombok.Data;
 

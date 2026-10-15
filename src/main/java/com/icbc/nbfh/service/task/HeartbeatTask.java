@@ -1,6 +1,7 @@
 package com.icbc.nbfh.service.task;
 
 import com.icbc.nbfh.service.HeartbeatService;
+import com.icbc.nbfh.service.RegisterService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -12,12 +13,22 @@ public class HeartbeatTask {
 
     private final HeartbeatService heartbeatService;
 
-    public HeartbeatTask(HeartbeatService heartbeatService) {
+    private final RegisterService registerService;
+
+    public HeartbeatTask(HeartbeatService heartbeatService,
+                         RegisterService registerService) {
         this.heartbeatService = heartbeatService;
+        this.registerService = registerService;
     }
 
-    @Scheduled(fixedDelayString = "${agent.heartbeat-interval:30000}")
+    @Scheduled(
+            fixedDelayString =
+                    "${agent.schedule.heartbeat-interval:30000}"
+    )
     public void heartbeat() {
-        heartbeatService.sendHeartbeat();
+
+        if (registerService.registerIfNeeded()) {
+            heartbeatService.sendHeartbeat();
+        }
     }
 }

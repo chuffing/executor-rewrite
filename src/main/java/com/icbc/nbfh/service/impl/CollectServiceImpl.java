@@ -1,7 +1,7 @@
 package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.config.AgentProperties;
-import com.icbc.nbfh.entity.dto.MetricDataDTO;
+import com.icbc.nbfh.entity.DTO.MetricDataDTO;
 import com.icbc.nbfh.service.CollectService;
 import com.icbc.nbfh.service.RegisterService;
 import com.icbc.nbfh.service.client.PlatformClient;
@@ -30,15 +30,16 @@ public class CollectServiceImpl implements CollectService {
 
     @Override
     public void collectAndReport() {
-        String token = registerService.getToken();
-        if (token == null || token.trim().isEmpty()) {
+        if (!registerService.isRegistered()) {
             log.warn("执行器尚未注册，跳过指标采集");
             return;
         }
 
+        String token = registerService.getToken();
+
         try {
             MetricDataDTO metric = collector.collect();
-            platformClient.reportMetric(metric, properties.getPlatformUrl(),
+            platformClient.reportMetric(metric, properties.getPlatform().getUrl(),
                     token, registerService.getAgentId());
             log.debug("指标采集并上报完成，status={}", metric.getStatus());
         } catch (Exception e) {

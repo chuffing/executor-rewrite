@@ -1,6 +1,7 @@
-package com.icbc.nbfh.entity.dto;
+package com.icbc.nbfh.entity.DTO;
 
-import com.icbc.nbfh.common.constant.OperationErrorCode;
+import com.icbc.nbfh.common.Enum.OperationErrorCode;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 

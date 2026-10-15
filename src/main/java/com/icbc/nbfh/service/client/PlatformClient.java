@@ -2,13 +2,12 @@ package com.icbc.nbfh.service.client;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.TypeReference;
-import com.icbc.nbfh.common.constant.OperationType;
-import com.icbc.nbfh.entity.dto.HeartbeatRequestDTO;
-import com.icbc.nbfh.entity.dto.MetricDataDTO;
-import com.icbc.nbfh.entity.dto.RegisterRequestDTO;
+import com.icbc.nbfh.entity.DTO.HeartbeatRequestDTO;
+import com.icbc.nbfh.entity.DTO.MetricDataDTO;
+import com.icbc.nbfh.entity.DTO.RegisterRequestDTO;
+import com.icbc.nbfh.entity.DTO.TaskResultReportDTO;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
@@ -18,7 +17,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 负责执行器与管理平台之间的 HTTP 通信。
+ * 负责执行器与管理平台之间的HTTP通信。
  */
 @Component
 public class PlatformClient {
@@ -63,22 +62,24 @@ public class PlatformClient {
         restTemplate.postForEntity(url, entity, String.class);
     }
 
-    public void reportTaskResult(String taskNo, int stepNo, String agentId,
-                                 OperationType operationType, String status,
-                                 String result, String platformUrl, String token) {
+    /**
+     * 向平台上报任务执行结果。
+     */
+    public void reportTaskResult(TaskResultReportDTO request,
+                                 String platformUrl,
+                                 String token) {
+
         String url = platformUrl + "/api/task/report";
-        Map<String, Object> body = new HashMap<>();
-        body.put("taskNo", taskNo);
-        body.put("stepNo", stepNo);
-        body.put("agentId", agentId);
-        body.put("operationType", operationType.name());
-        body.put("status", status);
-        body.put("result", result);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("Authorization", "Bearer " + token);
-        HttpEntity<String> entity = new HttpEntity<>(JSON.toJSONString(body), headers);
+
+        HttpEntity<String> entity = new HttpEntity<>(
+                JSON.toJSONString(request),
+                headers
+        );
+
         restTemplate.postForEntity(url, entity, String.class);
     }
 }

@@ -3,7 +3,7 @@ package com.icbc.nbfh.service.impl;
 import cn.hutool.core.net.NetUtil;
 import cn.hutool.system.HostInfo;
 import com.icbc.nbfh.config.AgentProperties;
-import com.icbc.nbfh.entity.dto.HeartbeatRequestDTO;
+import com.icbc.nbfh.entity.DTO.HeartbeatRequestDTO;
 import com.icbc.nbfh.service.HeartbeatService;
 import com.icbc.nbfh.service.RegisterService;
 import com.icbc.nbfh.service.client.PlatformClient;
@@ -28,10 +28,11 @@ public class HeartbeatServiceImpl implements HeartbeatService {
 
     @Override
     public void sendHeartbeat() {
-        String token = registerService.getToken();
-        if (token == null || token.trim().isEmpty()) {
+        if (!registerService.isRegistered()) {
             return;
         }
+
+        String token = registerService.getToken();
 
         try {
             HeartbeatRequestDTO request = new HeartbeatRequestDTO();
@@ -41,9 +42,9 @@ public class HeartbeatServiceImpl implements HeartbeatService {
             request.setHostname(new HostInfo().getName());
             request.setIp(NetUtil.getLocalhostStr());
             request.setLastCollectTime(
-                    System.currentTimeMillis() - properties.getCollectInterval());
+                    System.currentTimeMillis() - properties.getSchedule().getCollectInterval());
 
-            platformClient.heartbeat(request, properties.getPlatformUrl(), token);
+            platformClient.heartbeat(request, properties.getPlatform().getUrl(), token);
         } catch (Exception e) {
             log.error("心跳发送失败", e);
         }

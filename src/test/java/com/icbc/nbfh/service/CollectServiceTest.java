@@ -2,7 +2,7 @@ package com.icbc.nbfh.service;
 
 import com.alibaba.fastjson.JSON;
 import com.icbc.nbfh.config.AgentProperties;
-import com.icbc.nbfh.entity.dto.MetricDataDTO;
+import com.icbc.nbfh.entity.DTO.MetricDataDTO;
 import com.icbc.nbfh.service.collector.RedisInfoCollector;
 
 

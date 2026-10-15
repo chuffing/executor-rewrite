@@ -1,7 +1,7 @@
 package com.icbc.nbfh.service.collector;
 
 import com.icbc.nbfh.config.AgentProperties;
-import com.icbc.nbfh.entity.dto.MetricDataDTO;
+import com.icbc.nbfh.entity.DTO.MetricDataDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import redis.clients.jedis.Jedis;

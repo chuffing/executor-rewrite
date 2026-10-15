@@ -9,72 +9,110 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "agent")
 public class AgentProperties {
 
-    /** 平台地址。 */
-    private String platformUrl;
-
-    /** 预设注册码。 */
-    private String registerCode;
-
     /** 执行器名称。 */
     private String agentName;
 
-    /** 指标采集间隔，单位为毫秒。 */
-    private long collectInterval = 300000;
+    /** 平台通信配置。 */
+    private PlatformConfig platform = new PlatformConfig();
 
-    /** 心跳间隔，单位为毫秒。 */
-    private long heartbeatInterval = 30000;
+    /** 定时任务配置。 */
+    private ScheduleConfig schedule = new ScheduleConfig();
 
-    /** 本地 Redis 连接配置。 */
+    /** Redis 配置。 */
     private RedisConfig redis = new RedisConfig();
 
-    /** 固定运维脚本目录。 */
-    private String scriptDir;
+    /** Sentinel 配置。 */
+    private SentinelConfig sentinel = new SentinelConfig();
 
-    /** Redis systemd 服务名。 */
-    private String redisServiceName;
+    /** 运维操作配置。 */
+    private OperationConfig operation = new OperationConfig();
 
-    /** Redis 配置文件。 */
-    private String redisConfigFile;
 
-    /** Redis 数据目录。 */
-    private String redisDataDir;
+    @Data
+    public static class PlatformConfig {
 
-    /** Sentinel 端口。 */
-    private int sentinelPort = 26379;
+        /** 主平台地址。 */
+        private String url;
 
-    /** Sentinel systemd 服务名。 */
-    private String sentinelServiceName;
+        /** 执行器注册码。 */
+        private String registerCode;
 
-    /** Sentinel 配置文件。 */
-    private String sentinelConfigFile;
+        /** Token 本地保存路径。 */
+        private String tokenFile = "./agent-token.dat";
+    }
 
-    /** 备份磁盘中的 Redis 配置文件。 */
-    private String redisBackupFile;
 
-    /** 备份磁盘中的 Sentinel 配置文件。 */
-    private String sentinelBackupFile;
+    @Data
+    public static class ScheduleConfig {
 
-    /** Token 持久化文件。 */
-    private String tokenFile = "./agent-token.dat";
+        /** 指标采集间隔，毫秒。 */
+        private long collectInterval = 300000;
 
-    /** 升级包临时目录。 */
-    private String upgradeDir = "/tmp/redis-upgrade/";
+        /** 心跳间隔，毫秒。 */
+        private long heartbeatInterval = 30000;
+    }
+
 
     @Data
     public static class RedisConfig {
+
+        /** Redis 连接配置。 */
         private String host = "127.0.0.1";
         private int port = 6379;
         private String password;
         private int db = 0;
-        private int timeout = 5000;
-        private Pool pool = new Pool();
+        private int timeout = 2000;
 
-        @Data
-        public static class Pool {
-            private int maxTotal = 5;
-            private int maxIdle = 2;
-            private int minIdle = 1;
-            private long maxWaitMillis = 2000;
-        }
+        /** Redis 文件及服务配置。 */
+        private String serviceName;
+        private String configFile;
+        private String dataDir;
+        private String backupFile;
+
+        /** Redis 连接池。 */
+        private PoolConfig pool = new PoolConfig();
+    }
+
+
+    @Data
+    public static class PoolConfig {
+
+        private int maxTotal = 5;
+        private int maxIdle = 2;
+        private int minIdle = 1;
+        private long maxWaitMillis = 2000;
+    }
+
+
+    @Data
+    public static class SentinelConfig {
+
+        private int port = 26379;
+
+        private String serviceName;
+
+        private String configFile;
+
+        private String backupFile;
+    }
+
+
+    @Data
+    public static class OperationConfig {
+
+        /** 固定 Shell 脚本目录。 */
+        private String scriptDir;
+
+        /** 升级包临时目录。 */
+        private String upgradeDir = "/tmp/redis-upgrade/";
+
+        /** Shell 执行超时，秒。 */
+        private long scriptTimeoutSeconds = 10;
+
+        /** Redis 停止检查超时，秒。 */
+        private long stopCheckTimeoutSeconds = 10;
+
+        /** Redis 停止检查间隔，毫秒。 */
+        private long stopCheckIntervalMillis = 1000;
     }
 }

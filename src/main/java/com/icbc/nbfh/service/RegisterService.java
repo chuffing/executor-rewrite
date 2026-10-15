@@ -1,25 +1,29 @@
 package com.icbc.nbfh.service;
 
-import java.util.Map;
-
 /**
- * Agent 注册服务
+ * Agent注册服务。
  */
 public interface RegisterService {
 
     /**
-     * 执行注册流程
-     * @return true=注册成功或已有token, false=注册失败
+     * 执行注册流程。
+     *
+     * @return true表示已注册，false表示注册失败
      */
     boolean registerIfNeeded();
 
     /**
-     * 获取当前 token
+     * 判断当前执行器是否已经注册。
+     */
+    boolean isRegistered();
+
+    /**
+     * 获取当前Token。
      */
     String getToken();
 
     /**
-     * 获取当前 agentId
+     * 获取当前执行器编号。
      */
     String getAgentId();
 }
