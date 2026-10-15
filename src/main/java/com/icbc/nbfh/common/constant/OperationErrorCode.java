@@ -1,0 +1,32 @@
+package com.icbc.nbfh.common.constant;
+
+public enum OperationErrorCode {
+
+    INVALID_PARAMETER,
+
+    PRECONDITION_FAILED,
+
+    RESOURCE_INSUFFICIENT,
+
+    PORT_OCCUPIED,
+
+    COMMAND_NOT_FOUND,
+
+    COMMAND_TIMEOUT,
+
+    COMMAND_EXECUTION_FAILED,
+
+    CONFIG_INVALID,
+
+    CHECKSUM_MISMATCH,
+
+    HEALTH_CHECK_FAILED,
+
+    START_TIMEOUT,
+
+    REPLICATION_FAILED,
+
+    SENTINEL_FAILED,
+
+    UNKNOWN_ERROR
+}

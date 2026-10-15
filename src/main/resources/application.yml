@@ -1,0 +1,42 @@
+server:
+  port: ${SERVER_PORT:9101}
+
+spring:
+  application:
+    name: redis-monitor-agent
+
+agent:
+  platform-url: ${AGENT_PLATFORM_URL:http://localhost:8100}
+  register-code: ${AGENT_REGISTER_CODE:}
+  agent-name: ${AGENT_NAME:}
+  collect-interval: ${AGENT_COLLECT_INTERVAL:300000}
+  heartbeat-interval: ${AGENT_HEARTBEAT_INTERVAL:30000}
+
+  redis:
+    host: ${REDIS_HOST:127.0.0.1}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    db: ${REDIS_DB:0}
+    timeout: ${REDIS_TIMEOUT:2000}
+    pool:
+      max-total: 5
+      max-idle: 2
+      min-idle: 1
+      max-wait-millis: 2000
+
+  script-dir: ${AGENT_SCRIPT_DIR:}
+  redis-service-name: ${REDIS_SERVICE_NAME:}
+  redis-config-file: ${REDIS_CONFIG_FILE:}
+  redis-data-dir: ${REDIS_DATA_DIR:}
+  sentinel-port: ${SENTINEL_PORT:26379}
+  sentinel-service-name: ${SENTINEL_SERVICE_NAME:}
+  sentinel-config-file: ${SENTINEL_CONFIG_FILE:}
+  redis-backup-file: ${REDIS_BACKUP_FILE:}
+  sentinel-backup-file: ${SENTINEL_BACKUP_FILE:}
+
+  token-file: ${AGENT_TOKEN_FILE:./agent-token.dat}
+  upgrade-dir: ${AGENT_UPGRADE_DIR:./tmp/redis-upgrade/}
+
+logging:
+  level:
+    com.icbc.nbfh: INFO

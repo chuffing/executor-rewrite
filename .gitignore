@@ -1,0 +1,8 @@
+target/
+.idea/
+*.iml
+*.log
+agent-token.dat
+tmp/
+
+legacy-structure-backup/
