@@ -3,9 +3,14 @@ package com.icbc.nbfh.config;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+import org.springframework.validation.annotation.Validated;
+
+import javax.validation.Valid;
+import javax.validation.constraints.NotBlank;
 
 @Data
 @Component
+@Validated
 @ConfigurationProperties(prefix = "agent")
 public class AgentProperties {
 
@@ -19,9 +24,11 @@ public class AgentProperties {
     private ScheduleConfig schedule = new ScheduleConfig();
 
     /** Redis 配置。 */
+    @Valid
     private RedisConfig redis = new RedisConfig();
 
     /** Sentinel 配置。 */
+    @Valid
     private SentinelConfig sentinel = new SentinelConfig();
 
     /** 运维操作配置。 */
@@ -59,6 +66,7 @@ public class AgentProperties {
         /** Redis 连接配置。 */
         private String host = "127.0.0.1";
         private int port = 6379;
+        @NotBlank(message = "Redis密码不能为空")
         private String password;
         private int db = 0;
         private int timeout = 2000;
@@ -87,7 +95,14 @@ public class AgentProperties {
     @Data
     public static class SentinelConfig {
 
+        private String host = "127.0.0.1";
+
         private int port = 26379;
+
+        @NotBlank(message = "Sentinel密码不能为空")
+        private String password;
+
+        private int timeout = 2000;
 
         private String serviceName;
 
@@ -103,8 +118,14 @@ public class AgentProperties {
         /** 固定 Shell 脚本目录。 */
         private String scriptDir;
 
-        /** 升级包临时目录。 */
-        private String upgradeDir = "/tmp/redis-upgrade/";
+        /** Redis安装包暂存目录。 */
+        private String packageDir = "/opt/redis/packages/";
+
+        /** Redis各版本正式安装目录。 */
+        private String installDir = "/opt/redis/versions/";
+
+        /** 当前Redis版本软链接路径，预留给版本切换。 */
+        private String currentDir = "/opt/redis/current";
 
         /** Shell 执行超时，秒。 */
         private long scriptTimeoutSeconds = 10;
@@ -114,5 +135,11 @@ public class AgentProperties {
 
         /** Redis 停止检查间隔，毫秒。 */
         private long stopCheckIntervalMillis = 1000;
+
+        /** Redis 启动检查超时，秒。 */
+        private long startCheckTimeoutSeconds = 30;
+
+        /** Redis 启动检查间隔，毫秒。 */
+        private long startCheckIntervalMillis = 1000;
     }
 }

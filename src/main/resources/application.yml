@@ -2,6 +2,12 @@ server:
   port: ${SERVER_PORT:9101}
 
 spring:
+  servlet:
+    multipart:
+      # 文件上限50 MiB；请求额外预留1 MiB用于任务报文及multipart边界。
+      max-file-size: 50MB
+      max-request-size: 51MB
+
   application:
     name: redis-monitor-agent
 
@@ -42,7 +48,10 @@ agent:
 
   # Sentinel
   sentinel:
+    host: ${SENTINEL_HOST:127.0.0.1}
     port: ${SENTINEL_PORT:26379}
+    password: ${SENTINEL_PASSWORD:}
+    timeout: ${SENTINEL_TIMEOUT:2000}
     service-name: ${SENTINEL_SERVICE_NAME:}
     config-file: ${SENTINEL_CONFIG_FILE:}
     backup-file: ${SENTINEL_BACKUP_FILE:}
@@ -50,11 +59,15 @@ agent:
   # 运维操作
   operation:
     script-dir: ${AGENT_SCRIPT_DIR:}
-    upgrade-dir: ${AGENT_UPGRADE_DIR:/tmp/redis-upgrade/}
+    package-dir: ${AGENT_PACKAGE_DIR:/opt/redis/packages/}
+    install-dir: ${AGENT_INSTALL_DIR:/opt/redis/versions/}
+    current-dir: ${AGENT_CURRENT_DIR:/opt/redis/current}
 
     script-timeout-seconds: 10
     stop-check-timeout-seconds: 10
     stop-check-interval-millis: 1000
+    start-check-timeout-seconds: 30
+    start-check-interval-millis: 1000
 
 logging:
   level:

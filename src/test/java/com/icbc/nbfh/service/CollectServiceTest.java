@@ -3,7 +3,7 @@ package com.icbc.nbfh.service;
 import com.alibaba.fastjson.JSON;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.MetricDataDTO;
-import com.icbc.nbfh.service.collector.RedisInfoCollector;
+import com.icbc.nbfh.collector.RedisInfoCollector;
 
 
 public class CollectServiceTest {
@@ -24,3 +24,4 @@ public class CollectServiceTest {
         return value == null || value.trim().isEmpty() ? defaultValue : value;
     }
 }
+

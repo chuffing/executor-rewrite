@@ -23,7 +23,7 @@ public class PlatformTaskDTO {
     /**
      * 运维操作类型。
      */
-    private String taskType;
+    private String OperationType;
 
     /**
      * 当前操作需要的参数。

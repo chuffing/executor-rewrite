@@ -4,8 +4,8 @@ import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.MetricDataDTO;
 import com.icbc.nbfh.service.CollectService;
 import com.icbc.nbfh.service.RegisterService;
-import com.icbc.nbfh.service.client.PlatformClient;
-import com.icbc.nbfh.service.collector.RedisInfoCollector;
+import com.icbc.nbfh.client.PlatformClient;
+import com.icbc.nbfh.collector.RedisInfoCollector;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -47,3 +47,4 @@ public class CollectServiceImpl implements CollectService {
         }
     }
 }
+

@@ -6,7 +6,7 @@ import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.HeartbeatRequestDTO;
 import com.icbc.nbfh.service.HeartbeatService;
 import com.icbc.nbfh.service.RegisterService;
-import com.icbc.nbfh.service.client.PlatformClient;
+import com.icbc.nbfh.client.PlatformClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -50,3 +50,4 @@ public class HeartbeatServiceImpl implements HeartbeatService {
         }
     }
 }
+
