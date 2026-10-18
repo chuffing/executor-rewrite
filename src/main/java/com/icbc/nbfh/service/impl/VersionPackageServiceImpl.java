@@ -3,7 +3,6 @@ package com.icbc.nbfh.service.impl;
 import com.icbc.nbfh.service.VersionPackageService;
 import com.icbc.nbfh.common.Enum.ParameterErrorCode;
 import com.icbc.nbfh.common.constant.ValidationConstants;
-import com.icbc.nbfh.common.constant.VersionPackageConstants;
 import com.icbc.nbfh.common.exception.ParameterException;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.util.FileChecksumUtil;
@@ -25,6 +24,15 @@ import java.nio.file.StandardOpenOption;
 @Service
 @RequiredArgsConstructor
 public class VersionPackageServiceImpl implements VersionPackageService {
+
+    /** 安装包暂存子目录。 */
+    private static final String STAGING_DIRECTORY_NAME = "staging";
+
+    /** 上传过程中的临时安装包文件名。 */
+    private static final String TEMP_PACKAGE_FILE_NAME = "package.part";
+
+    /** 校验完成后的安装包文件名。 */
+    private static final String STAGED_PACKAGE_FILE_NAME = "package.tar.gz";
 
     private final AgentProperties agentProperties;
 
@@ -50,7 +58,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
 
         // 在安装包根目录下面拼接staging子目录。
         Path stagingDirectory = packageDirectory.resolve(
-                VersionPackageConstants.STAGING_DIRECTORY_NAME);
+                STAGING_DIRECTORY_NAME);
 
         // 如果staging目录不存在，就创建。
         Files.createDirectories(stagingDirectory);
@@ -62,10 +70,10 @@ public class VersionPackageServiceImpl implements VersionPackageService {
                 stagingDirectory, taskNo + "-");
         // 拼接正在上传时使用的临时文件目录。
         Path temporaryPath = requestDirectory.resolve(
-                VersionPackageConstants.TEMP_PACKAGE_FILE_NAME);
+                TEMP_PACKAGE_FILE_NAME);
         // 拼接校验通过后使用的正式暂存文件路径。
         Path packagePath = requestDirectory.resolve(
-                VersionPackageConstants.STAGED_PACKAGE_FILE_NAME);
+                STAGED_PACKAGE_FILE_NAME);
 
         // 记录本次上传流程是否成功。
         boolean completed = false;
@@ -148,7 +156,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
             // 清理只允许发生在配置的暂存目录下，不接受任意服务器路径。
             Path stagingDirectory = Paths.get(
                     agentProperties.getOperation().getPackageDir().trim())
-                    .toRealPath().resolve(VersionPackageConstants.STAGING_DIRECTORY_NAME);
+                    .toRealPath().resolve(STAGING_DIRECTORY_NAME);
             if (requestDirectory == null) {
                 throw new IOException("缺少安装包暂存目录");
             }
@@ -162,9 +170,9 @@ public class VersionPackageServiceImpl implements VersionPackageService {
 
         // 分别尝试删除，单个文件删除失败不影响另一个文件的清理。
         deleteIfExists(requestDirectory.resolve(
-                VersionPackageConstants.TEMP_PACKAGE_FILE_NAME));
+                TEMP_PACKAGE_FILE_NAME));
         deleteIfExists(requestDirectory.resolve(
-                VersionPackageConstants.STAGED_PACKAGE_FILE_NAME));
+                STAGED_PACKAGE_FILE_NAME));
         deleteIfExists(requestDirectory);
     }
 
