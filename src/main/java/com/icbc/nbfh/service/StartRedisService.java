@@ -10,5 +10,5 @@ public interface StartRedisService {
     /**
      * 执行Redis启动操作并检查运行状态。
      */
-    OperationResultDTO execute();
+    OperationResultDTO startRedis();
 }

@@ -1,164 +1,135 @@
 #!/bin/bash
 set -euo pipefail
 umask 077
+export LC_ALL=C
+unset TAR_OPTIONS GZIP
 
-# 三个固定参数：安装包完整路径、目标版本、正式安装目录。
-# 只解压预编译运行包并执行--version检查，不编译、不启停、不切换current。
-exec python3 - "$@" <<'PY'
-import os
-import re
-import shutil
-import signal
-import stat
-import subprocess
-import sys
-import tarfile
-import tempfile
-from pathlib import Path
+# 部署只准备运行文件，不编译、不启停、不修改current及生产配置。
+if [[ $# -ne 3 ]]; then
+    echo "需要安装包完整路径、目标版本和正式安装目录三个参数" >&2
+    exit 1
+fi
+package="$1"
+version="$2"
+install_dir="$3"
+work=""
+lock=""
+locked=false
+published=false
+completed=false
 
-BINARIES = ("redis-server", "redis-cli", "redis-sentinel")
-MAX_EXTRACTED_BYTES = 1024 * 1024 * 1024
-MAX_ENTRIES = 100
-PROGRAM_CHECK_TIMEOUT_SECONDS = 3
+# 输出错误并终止本次部署。
+fail() {
+    echo "$1" >&2
+    exit 1
+}
 
+# 只清理本次创建的目录，已经完成的版本及其他版本均不删除。
+cleanup() {
+    local result=$?
+    trap - EXIT INT TERM
+    if [[ "$published" == true && "$completed" != true && "$target" == "$install_dir/$version" ]]; then
+        rm -rf -- "$target" || result=1
+    fi
+    if [[ -n "$work" && "$work" == "$install_dir"/.deploy-* && ! -L "$work" ]]; then
+        rm -rf -- "$work" || result=1
+    fi
+    if [[ "$locked" == true ]]; then
+        rmdir -- "$lock" || result=1
+    fi
+    exit "$result"
+}
 
-def extract_safely(package, destination, version):
-    """在独立目录内流式解压，只允许固定运行文件，拒绝所有归档链接。"""
-    prefix = "redis-" + version
-    allowed_files = {prefix + "/bin/" + binary for binary in BINARIES}
-    allowed_directories = {prefix, prefix + "/bin"}
-    names = set()
-    total_size = 0
-    with tarfile.open(str(package), mode="r|gz") as archive:
-        for count, member in enumerate(archive, 1):
-            if count > MAX_ENTRIES:
-                raise ValueError("安装包条目数超限")
-            name = member.name.rstrip("/") if member.isdir() else member.name
-            if not name or name.startswith("/") or "\\" in name or ":" in name:
-                raise ValueError("运行包包含不安全路径")
-            if any(part in ("", ".", "..") for part in name.split("/")):
-                raise ValueError("运行包包含路径穿越")
-            if name in names:
-                raise ValueError("运行包包含重复路径")
-            names.add(name)
-            if member.isdir():
-                if name not in allowed_directories:
-                    raise ValueError("运行包包含非约定目录")
-                continue
-            if not member.isreg():
-                raise ValueError("运行包不能包含链接或特殊文件")
-            if name not in allowed_files:
-                raise ValueError("运行包只能包含约定程序，不能包含生产配置")
-            if member.size <= 0 or not member.mode & 0o111:
-                raise ValueError("运行程序为空或缺少执行权限")
-            total_size += member.size
-            if total_size > MAX_EXTRACTED_BYTES:
-                raise ValueError("运行包解压大小超限")
-            target = destination / "bin" / name.rsplit("/", 1)[1]
-            target.parent.mkdir(exist_ok=True)
-            # 固定文件名、排他创建，不使用tar.extractall及原归档属主权限。
-            with archive.extractfile(member) as source, target.open("xb") as output:
-                shutil.copyfileobj(source, output, length=64 * 1024)
-            target.chmod(0o700)
-    if not allowed_files.issubset(names):
-        raise ValueError("运行包缺少redis-server、redis-cli或redis-sentinel")
+[[ "$version" =~ ^[0-9]+(\.[0-9]+){1,3}(-[0-9A-Za-z.-]+)?$ ]] || fail "目标版本号格式不正确"
+[[ "$package" == /* && "$install_dir" == /* ]] || fail "安装包和安装目录必须使用绝对路径"
+[[ -f "$package" && -r "$package" ]] || fail "安装包不是可读的普通文件"
+[[ -d "$install_dir" && -w "$install_dir" && -x "$install_dir" ]] || fail "正式安装目录不存在或不可写"
+install_dir="$(readlink -f -- "$install_dir")"
+[[ "$install_dir" != / ]] || fail "不能使用根目录作为版本安装目录"
 
+# 只处理执行器创建的固定暂存文件，保持原来的受控路径及权限约束。
+request="${package%/*}"
+staging="${request%/*}"
+[[ "${package##*/}" == package.tar.gz && "${staging##*/}" == staging ]] || fail "安装包不符合固定暂存路径约定"
+[[ "${request##*/}" =~ ^TASK[0-9]{12}-[0-9A-Za-z_-]+$ ]] || fail "安装包不在执行器创建的上传目录内"
+owner="$(id -u)"
+for controlled in "$staging" "$request" "$package"; do
+    [[ "$(stat -c %u -- "$controlled")" == "$owner" ]] || fail "暂存文件或目录不属于执行器账户"
+    mode="$(stat -c %a -- "$controlled")"
+    (( (8#$mode & 8#022) == 0 )) || fail "暂存文件或目录允许其他账户写入"
+done
+[[ "$(stat -c %h -- "$package")" == 1 ]] || fail "安装包不能是硬链接"
+target="$install_dir/$version"
+[[ ! -e "$target" && ! -L "$target" ]] || fail "目标版本已存在，禁止覆盖"
+lock="$install_dir/.deploy-$version.lock"
+mkdir -- "$lock" || fail "已有版本部署任务或遗留部署锁"
+locked=true
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+work="$(mktemp -d -- "$install_dir/.deploy-XXXXXXXXXX")"
 
-def verify_programs(directory, version):
-    """检查Linux运行文件及实际版本，--version不会启动Redis或Sentinel。"""
-    for binary in BINARIES:
-        program = directory / "bin" / binary
-        if not program.is_file() or program.is_symlink():
-            raise ValueError("运行程序不存在或不是普通文件")
-        if not os.access(str(program), os.X_OK):
-            raise ValueError("运行程序不可执行")
-        with program.open("rb") as stream:
-            if stream.read(4) != b"\x7fELF":
-                raise ValueError("运行程序不是Linux ELF文件")
-        # argv[0]使用固定文件路径，不经Shell拼接，限制检查耗时。
-        result = subprocess.run([str(program), "--version"], check=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                universal_newlines=True,
-                                timeout=PROGRAM_CHECK_TIMEOUT_SECONDS)
-        if binary == "redis-cli":
-            match = re.search(r"redis-cli\s+(\S+)", result.stdout)
-        else:
-            match = re.search(r"\bv=([^\s]+)", result.stdout)
-        if match is None or match.group(1) != version:
-            raise ValueError(binary + "实际版本与目标版本不一致")
+# 固定副本避免清单检查与读取文件内容使用不同的归档。
+cp -- "$package" "$work/package.tar.gz"
+archive="$work/package.tar.gz"
 
+# GNU tar使用转义格式列清单，只允许约定的目录和三个普通可执行文件。
+# 清单流式校验，最多100个条目、总文件大小1 GiB；拒绝链接、特殊文件和重复路径。
+if ! tar --list --absolute-names --gzip --verbose --numeric-owner --full-time --quoting-style=escape \
+        --file="$archive" | awk -v prefix="redis-$version" '
+function reject(message) { print message > "/dev/stderr"; failed=1; exit 1 }
+{
+    if (NR > 100) reject("安装包条目数超过100")
+    if (NF != 6) reject("归档条目格式或名称不符合约定")
+    type=substr($1,1,1)
+    name=$6
+    sub(/\/$/, "", name)
+    if (seen[name]++) reject("安装包包含重复路径")
+    if (type == "d") {
+        if (name != prefix && name != prefix "/bin") reject("安装包包含非约定目录")
+        next
+    }
+    if (type != "-") reject("安装包不能包含链接或特殊文件")
+    if (name != prefix "/bin/redis-server" && name != prefix "/bin/redis-cli" && name != prefix "/bin/redis-sentinel")
+        reject("安装包包含非约定文件或不安全路径")
+    if ($3 !~ /^[0-9]+$/ || $3+0 <= 0 || $1 !~ /[xst]/) reject("程序为空或缺少执行权限")
+    total += $3
+    if (total > 1073741824) reject("安装包解压总大小超过1 GiB")
+    count++
+}
+END { if (!failed && count != 3) { print "安装包缺少运行程序" > "/dev/stderr"; exit 1 } }
+'; then
+    fail "Redis运行包安全检查失败"
+fi
 
-def deploy(package_name, version, install_dir):
-    """验证通过后才发布新版本目录，失败只清理本次工作产物。"""
-    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}(?:-[0-9A-Za-z.-]+)?", version):
-        raise ValueError("目标版本不合法")
-    installed = Path(install_dir).resolve(strict=True)
-    if not installed.is_dir():
-        raise ValueError("正式安装路径不是目录")
+# 不按归档路径落盘，只把指定成员的内容写入本次私有目录的固定文件。
+mkdir -- "$work/bin"
+for name in redis-server redis-cli redis-sentinel; do
+    program="$work/bin/$name"
+    (set -o noclobber; tar --extract --gzip --to-stdout --occurrence=1 \
+        --file="$archive" -- "redis-$version/bin/$name" > "$program") || fail "读取运行程序失败：$name"
+    [[ -s "$program" ]] || fail "运行程序内容为空：$name"
+    magic="$(od -An -tx1 -N4 -- "$program")"
+    [[ "${magic//[[:space:]]/}" == 7f454c46 ]] || fail "运行程序不是Linux ELF文件：$name"
+    chmod 700 -- "$program"
+    [[ -x "$program" ]] || fail "运行程序不可执行：$name"
+    output="$(timeout 3 "$program" --version | head -c 65536)" || fail "运行程序版本检查失败：$name"
+    if [[ "$name" == redis-cli ]]; then
+        [[ "$output" =~ redis-cli[[:space:]]+([^[:space:]]+) ]] || fail "无法读取redis-cli版本"
+    else
+        [[ "$output" =~ (^|[[:space:]])v=([^[:space:]]+) ]] || fail "无法读取$name版本"
+    fi
+    if [[ "$name" == redis-cli ]]; then
+        actual_version="${BASH_REMATCH[1]}"
+    else
+        actual_version="${BASH_REMATCH[2]}"
+    fi
+    [[ "$actual_version" == "$version" ]] || fail "程序实际版本与目标版本不一致：$name"
+done
 
-    # 不读取packageDir，只接受本机执行器账户控制的标准上传文件。
-    supplied = Path(package_name)
-    if not supplied.is_absolute():
-        raise ValueError("安装包必须使用绝对路径")
-    package = supplied.resolve(strict=True)
-    if package != supplied:
-        raise ValueError("安装包路径不能包含符号链接或跳转")
-    request = package.parent
-    staging = request.parent
-    if package.name != "package.tar.gz" or staging.name != "staging":
-        raise ValueError("安装包不符合固定暂存路径约定")
-    if not re.fullmatch(r"TASK[0-9]{12}-[0-9A-Za-z_-]+", request.name):
-        raise ValueError("安装包不在执行器创建的上传目录内")
-    if not package.is_file():
-        raise ValueError("安装包不是普通文件")
-    # 上传目录与文件必须属于执行器账户，且不能让其他账户改写。
-    for controlled in (staging, request, package):
-        metadata = controlled.stat()
-        if metadata.st_uid != os.geteuid():
-            raise ValueError("暂存文件或目录不属于执行器运行账户")
-        if metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
-            raise ValueError("暂存文件或目录允许其他账户写入")
-    if package.stat().st_nlink != 1:
-        raise ValueError("安装包不能是硬链接")
-    target = installed / version
-    if os.path.lexists(str(target)):
-        raise FileExistsError("目标版本已存在，禁止重复部署或覆盖")
-
-    lock = installed / (".deploy-" + version + ".lock")
-    lock.mkdir()
-    work = None
-    published = False
-    completed = False
-    try:
-        work = Path(tempfile.mkdtemp(prefix=".deploy-", dir=str(installed)))
-        extract_safely(package, work, version)
-        verify_programs(work, version)
-        # mkdir排他占用最终目录，已有目录（包括空目录）也不覆盖。
-        target.mkdir()
-        published = True
-        shutil.move(str(work / "bin"), str(target / "bin"))
-        completed = True
-    finally:
-        try:
-            if published and not completed:
-                shutil.rmtree(str(target))
-        finally:
-            try:
-                if work is not None:
-                    shutil.rmtree(str(work))
-            finally:
-                lock.rmdir()
-
-
-def interrupted(signum, frame):
-    """收到Java超时终止信号后通过finally清理本次临时目录。"""
-    raise InterruptedError("版本部署已终止")
-
-
-if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        sys.exit("需要安装包完整路径、目标版本和正式安装目录三个参数")
-    signal.signal(signal.SIGTERM, interrupted)
-    signal.signal(signal.SIGINT, interrupted)
-    deploy(*sys.argv[1:])
-PY
+# 排他创建正式目录，已有目录即使为空也不能覆盖。
+mkdir -- "$target" || fail "目标版本已存在或无法创建"
+published=true
+mv -T -- "$work/bin" "$target/bin"
+completed=true
+echo "Redis运行版本部署完成：$version"

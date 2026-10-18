@@ -121,11 +121,17 @@ public class AgentProperties {
         /** Redis安装包暂存目录。 */
         private String packageDir = "/opt/redis/packages/";
 
+        /** Redis与Sentinel配置文件的暂存根目录。 */
+        private String configFileDir;
+
         /** Redis各版本正式安装目录。 */
         private String installDir = "/opt/redis/versions/";
 
         /** 当前Redis版本软链接路径，预留给版本切换。 */
         private String currentDir = "/opt/redis/current";
+
+        /** 预检查要求的最低磁盘可用空间，默认2 GiB。 */
+        private long minFreeSpaceBytes = 2L * 1024L * 1024L * 1024L;
 
         /** Shell 执行超时，秒。 */
         private long scriptTimeoutSeconds = 10;

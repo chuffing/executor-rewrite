@@ -18,7 +18,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
@@ -38,7 +37,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
      * 部署前核对SHA256，再调用固定脚本安装新版本。
      */
     @Override
-    public OperationResultDTO execute(Map<String, String> params) {
+    public OperationResultDTO deployVersion(Map<String, String> params) {
 
         // 记录当前任务开始执行的时间。
         long startTime = System.currentTimeMillis();
@@ -73,7 +72,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
             Path installDirectory = Paths.get(installDir.trim()).toAbsolutePath().normalize();
 
             // ======== 2. 检查安装包文件 ========
-            if (!Files.isRegularFile(packagePath, LinkOption.NOFOLLOW_LINKS)) {
+            if (!Files.isRegularFile(packagePath)) {
                 return OperationResultDTO.failure(OperationErrorCode.PRECONDITION_FAILED,
                         "Redis安装包不存在或不是普通文件", startTime, System.currentTimeMillis());
             }
@@ -90,7 +89,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
 
             // ======== 4. 调用Shell部署脚本 ========
             // 三个业务参数依次为：安装包完整路径、目标版本号、正式安装目录。
-            CommandResultDTO commandResult = fixedScriptExecutor.execute(
+            CommandResultDTO commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.DEPLOY_VERSION,
                     agentProperties.getOperation().getScriptTimeoutSeconds(),
                     packagePath.toString(),
@@ -111,19 +110,24 @@ public class DeployVersionServiceImpl implements DeployVersionService {
             }
             return OperationResultDTO.success("Redis运行版本部署完成",
                     startTime, System.currentTimeMillis());
+
         } catch (FileNotFoundException e) {
             return OperationResultDTO.failure(OperationErrorCode.COMMAND_NOT_FOUND,
                     "Redis版本部署脚本不存在", startTime, System.currentTimeMillis());
+
         } catch (InvalidPathException e) {
             return OperationResultDTO.failure(OperationErrorCode.CONFIG_INVALID,
-                    "Redis部署目录格式不正确", startTime, System.currentTimeMillis());
+                    "Redis部署相关路径格式不正确", startTime, System.currentTimeMillis());
+
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return OperationResultDTO.failure(OperationErrorCode.UNKNOWN_ERROR,
                     "Redis版本部署被中断", startTime, System.currentTimeMillis());
+
         } catch (IOException e) {
             return OperationResultDTO.failure(OperationErrorCode.COMMAND_EXECUTION_FAILED,
                     "Redis目录检查、安装包读取或部署失败", startTime, System.currentTimeMillis());
+
         } finally {
             // 清理只交给包服务，路径检查和删除规则只有一份。
             if (packagePath != null) {

@@ -38,6 +38,7 @@ class ServiceWiringTest {
                     assertTrue(context.isRunning());
                     Class<?>[] interfaces = {
                             AgentTaskService.class,
+                            PrecheckHostService.class,
                             CollectService.class,
                             HeartbeatService.class,
                             RegisterService.class,
@@ -46,7 +47,10 @@ class ServiceWiringTest {
                             StartSentinelService.class,
                             StopSentinelService.class,
                             RestoreConfigService.class,
+                            DeployConfigService.class,
+                            ConfigFileService.class,
                             DeployVersionService.class,
+                            SwitchVersionService.class,
                             VersionPackageService.class
                     };
                     for (Class<?> serviceInterface : interfaces) {

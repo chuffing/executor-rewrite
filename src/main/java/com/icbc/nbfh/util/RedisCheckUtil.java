@@ -1,12 +1,15 @@
 package com.icbc.nbfh.util;
 
 import com.icbc.nbfh.common.constant.RedisProtocolConstants;
+import org.springframework.util.StringUtils;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.exceptions.JedisException;
 
 import java.io.IOException;
 import java.net.ConnectException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.util.List;
@@ -110,6 +113,30 @@ public final class RedisCheckUtil {
 
         } catch (SocketTimeoutException e) {
             return true;
+        }
+    }
+
+    /**
+     * 只探测本机配置地址的TCP端口，拒绝连接才按未监听处理。
+     */
+    public static boolean isLocalPortListening(String host, int port, int timeout) throws IOException {
+
+        if (!StringUtils.hasText(host) || port < 1 || port > 65535) {
+            throw new IllegalArgumentException("Redis或Sentinel连接地址、端口配置不正确");
+        }
+        if (timeout <= 0) {
+            throw new IllegalArgumentException("Redis或Sentinel连接超时必须大于0");
+        }
+        InetAddress address = InetAddress.getByName(host);
+        if (!address.isLoopbackAddress() && NetworkInterface.getByInetAddress(address) == null) {
+            throw new IllegalArgumentException("主机预检查只允许探测本机地址");
+        }
+        try (Socket socket = new Socket()) {
+            // 复用已有Redis或Sentinel连接超时配置，不增加单独的探测配置。
+            socket.connect(new InetSocketAddress(address, port), timeout);
+            return true;
+        } catch (ConnectException e) {
+            return false;
         }
     }
 

@@ -1,5 +1,6 @@
 package com.icbc.nbfh.controller;
 
+import com.icbc.nbfh.service.ConfigFileService;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.ParameterErrorCode;
 import com.icbc.nbfh.common.Enum.TaskSubmitStatus;
@@ -32,7 +33,7 @@ class AgentTaskControllerTest {
 
         AgentTaskController controller =
                 new AgentTaskController(agentTaskService,
-                        mock(com.icbc.nbfh.service.VersionPackageService.class));
+                        mock(com.icbc.nbfh.service.VersionPackageService.class), mock(ConfigFileService.class));
 
         PlatformTaskDTO task = new PlatformTaskDTO();
         task.setTaskNo("TASK202610160001");
@@ -68,7 +69,7 @@ class AgentTaskControllerTest {
 
         AgentTaskController controller =
                 new AgentTaskController(agentTaskService,
-                        mock(com.icbc.nbfh.service.VersionPackageService.class));
+                        mock(com.icbc.nbfh.service.VersionPackageService.class), mock(ConfigFileService.class));
 
         PlatformTaskDTO task = new PlatformTaskDTO();
         task.setTaskNo("INVALID_TASK_NO");

@@ -28,7 +28,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
      * 执行Sentinel启动操作并检查运行状态。
      */
     @Override
-    public OperationResultDTO execute() {
+    public OperationResultDTO startSentinel() {
 
         // 获取开始时间。
         long startTime = System.currentTimeMillis();
@@ -48,11 +48,12 @@ public class StartSentinelServiceImpl implements StartSentinelService {
         // 脚本执行结果。
         CommandResultDTO commandResult;
 
-        // 执行脚本。
+        // 将已有的current路径传给启动脚本。
         try {
-            commandResult = fixedScriptExecutor.execute(
+            commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.START_SENTINEL,
-                    agentProperties.getOperation().getScriptTimeoutSeconds()
+                    agentProperties.getOperation().getScriptTimeoutSeconds(),
+                    agentProperties.getOperation().getCurrentDir()
             );
         } catch (FileNotFoundException e) {
             return OperationResultDTO.failure(

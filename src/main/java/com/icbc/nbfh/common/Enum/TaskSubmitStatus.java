@@ -5,5 +5,9 @@ package com.icbc.nbfh.common.Enum;
  */
 public enum TaskSubmitStatus {
 
-    ACCEPTED
+    /** 任务已接收。 */
+    ACCEPTED,
+
+    /** 执行器繁忙，任务未接收。 */
+    BUSY
 }

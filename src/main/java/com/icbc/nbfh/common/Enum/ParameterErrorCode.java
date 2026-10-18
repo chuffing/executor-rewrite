@@ -17,7 +17,11 @@ public enum ParameterErrorCode {
 
     PACKAGE_FILE_INVALID("PARAM_006", "安装包不合法"),
 
-    PACKAGE_CHECKSUM_MISMATCH("PARAM_007", "安装包摘要不一致");
+    PACKAGE_CHECKSUM_MISMATCH("PARAM_007", "安装包摘要不一致"),
+
+    CONFIG_FILE_INVALID("PARAM_008", "配置文件不合法"),
+
+    CONFIG_CHECKSUM_MISMATCH("PARAM_009", "配置文件摘要不一致");
 
     private final String code;
 

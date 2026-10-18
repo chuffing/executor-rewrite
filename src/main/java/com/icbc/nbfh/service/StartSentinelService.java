@@ -10,5 +10,5 @@ public interface StartSentinelService {
     /**
      * 执行Sentinel启动操作并检查运行状态。
      */
-    OperationResultDTO execute();
+    OperationResultDTO startSentinel();
 }

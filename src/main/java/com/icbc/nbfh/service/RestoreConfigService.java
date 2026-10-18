@@ -12,5 +12,5 @@ public interface RestoreConfigService {
     /**
      * 校验本地备份摘要并恢复Redis和Sentinel配置。
      */
-    OperationResultDTO execute(Map<String, String> params);
+    OperationResultDTO restoreConfig(Map<String, String> params);
 }

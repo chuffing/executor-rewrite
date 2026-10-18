@@ -16,10 +16,13 @@ import com.icbc.nbfh.common.Enum.ParameterErrorCode;
 import com.icbc.nbfh.common.constant.ValidationConstants;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.common.Enum.OperationType;
+import com.icbc.nbfh.common.Enum.TaskSubmitStatus;
 import com.icbc.nbfh.common.exception.ParameterException;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.controller.AgentTaskController;
 import com.icbc.nbfh.entity.DTO.PlatformTaskDTO;
+import com.icbc.nbfh.entity.VO.TaskSubmitResultVO;
+import org.springframework.http.ResponseEntity;
 import com.icbc.nbfh.util.FileChecksumUtil;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -87,7 +90,7 @@ class VersionPackageServiceTest {
         MultipartFile file = mock(MultipartFile.class);
         when(file.getSize()).thenReturn(
                 ValidationConstants.MAX_UPGRADE_PACKAGE_SIZE_BYTES + 1);
-        AgentTaskController controller = new AgentTaskController(tasks, packages);
+        AgentTaskController controller = new AgentTaskController(tasks, packages, mock(ConfigFileService.class));
         assertThrows(ParameterException.class,
                 () -> controller.receiveVersionDeployTask(createTask(), file));
         verifyNoInteractions(tasks, packages);
@@ -110,7 +113,7 @@ class VersionPackageServiceTest {
         when(packages.saveAndValidate(task.getTaskNo(),
                 task.getParams().get(TaskParamConstants.PACKAGE_SHA256), file))
                 .thenReturn(staged);
-        AgentTaskController controller = new AgentTaskController(tasks, packages);
+        AgentTaskController controller = new AgentTaskController(tasks, packages, mock(ConfigFileService.class));
         assertEquals(202, controller.receiveVersionDeployTask(task, file).getStatusCodeValue());
         verify(tasks).submitTask(task);
         assertEquals(staged.toString(),
@@ -128,9 +131,13 @@ class VersionPackageServiceTest {
         byte[] archive = createPackageBytes();
         PlatformTaskDTO task = createTask();
         task.getParams().put(TaskParamConstants.PACKAGE_SHA256, checksum(archive));
-        AgentTaskController controller = new AgentTaskController(tasks, packages);
-        assertThrows(RejectedExecutionException.class,
-                () -> controller.receiveVersionDeployTask(task, upload(archive)));
+        AgentTaskController controller = new AgentTaskController(tasks, packages, mock(ConfigFileService.class));
+        ResponseEntity<TaskSubmitResultVO> response =
+                controller.receiveVersionDeployTask(task, upload(archive));
+        assertEquals(503, response.getStatusCodeValue());
+        assertNotNull(response.getBody());
+        assertEquals(TaskSubmitStatus.BUSY.name(), response.getBody().getStatus());
+        assertEquals(task.getTaskNo(), response.getBody().getTaskNo());
         assertEquals(0, stagingEntryCount());
     }
 
@@ -141,7 +148,7 @@ class VersionPackageServiceTest {
     void shouldRejectDeploymentThroughJsonEndpoint() {
         AgentTaskService tasks = mock(AgentTaskService.class);
         AgentTaskController controller = new AgentTaskController(tasks,
-                mock(VersionPackageService.class));
+                mock(VersionPackageService.class), mock(ConfigFileService.class));
         assertThrows(ParameterException.class, () -> controller.receiveTask(createTask()));
         verifyNoInteractions(tasks);
     }
@@ -328,7 +335,7 @@ class VersionPackageServiceTest {
         params.put(TaskParamConstants.PACKAGE_SHA256, expected);
         OperationResultDTO result =
                 new DeployVersionServiceImpl(scripts, properties, new VersionPackageServiceImpl(properties))
-                        .execute(params);
+                        .deployVersion(params);
         assertFalse(result.isSuccess());
         assertEquals(OperationErrorCode.CHECKSUM_MISMATCH,
                 result.getErrorCode());

@@ -30,6 +30,13 @@ public final class ValidationConstants {
     public static final long MAX_UPGRADE_PACKAGE_SIZE_BYTES =
             50L * 1024L * 1024L;
 
+    /** 配置上传独立目录的固定标记，避免清理其他类型任务。 */
+    public static final Pattern CONFIG_STAGING_DIRECTORY_PATTERN =
+            Pattern.compile("TASK\\d{12}-config-[0-9A-Za-z_-]+");
+
+    /** 每份上传配置文件最大为1 MiB，按原始字节计算。 */
+    public static final int MAX_CONFIG_FILE_SIZE_BYTES = 1024 * 1024;
+
     /** 安装包原始文件名允许的最大长度。 */
     public static final int MAX_PACKAGE_FILE_NAME_LENGTH = 128;
 

@@ -5,6 +5,12 @@ package com.icbc.nbfh.common.constant;
  */
 public final class TaskParamConstants {
 
+    /** 执行器生成的Redis配置暂存路径，只在内部任务中使用。 */
+    public static final String REDIS_CONFIG_LOCAL_PATH = "redisConfigLocalPath";
+
+    /** 执行器生成的Sentinel配置暂存路径，只在内部任务中使用。 */
+    public static final String SENTINEL_CONFIG_LOCAL_PATH = "sentinelConfigLocalPath";
+
     public static final String REDIS_CONFIG_SHA256 = "redisConfigSha256";
 
     public static final String SENTINEL_CONFIG_SHA256 =

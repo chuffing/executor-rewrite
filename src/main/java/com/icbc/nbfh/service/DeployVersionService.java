@@ -7,5 +7,5 @@ import java.util.Map;
 public interface DeployVersionService {
 
     /** 校验暂存包摘要并部署指定版本，不切换当前版本。 */
-    OperationResultDTO execute(Map<String, String> params);
+    OperationResultDTO deployVersion(Map<String, String> params);
 }

@@ -30,6 +30,7 @@ class StartStopScriptTest(unittest.TestCase):
         self.fake = self.root / 'fake-redis.sh'
         self.fake.write_text('''#!/bin/bash
 printf 'call\\n' >> "$CALL_LOG"
+printf '%s\\n' "$0" >> "$CALL_LOG"
 printf '%s\\n' "$@" >> "$CALL_LOG"
 if [[ "${REDISCLI_AUTH:-}" == "test-secret" ]]; then
     printf 'auth-present\\n' >> "$CALL_LOG"
@@ -51,11 +52,17 @@ esac
 exit "${FAKE_EXIT_CODE:-0}"
 ''', encoding='utf-8', newline='\n')
         self.fake.chmod(0o700)
+        self.version = self.root / 'versions' / '6.2.19'
+        (self.version / 'bin').mkdir(parents=True)
+        for name in ('redis-server', 'redis-sentinel'):
+            shutil.copy2(self.fake, self.version / 'bin' / name)
+        self.current = self.root / 'current'
+        self.create_link(self.version)
         self.env = dict(os.environ)
         self.env.update({
             'CALL_LOG': shell_path(self.log),
-            'REDIS_SERVER_BIN': shell_path(self.fake),
-            'SENTINEL_SERVER_BIN': shell_path(self.fake),
+            'REDIS_SERVER_BIN': '/missing/old-redis',
+            'SENTINEL_SERVER_BIN': '/missing/old-sentinel',
             'REDIS_CLI_BIN': shell_path(self.fake),
             'REDIS_CONFIG_FILE': shell_path(self.config),
             'SENTINEL_CONFIG_FILE': shell_path(self.config),
@@ -65,16 +72,29 @@ exit "${FAKE_EXIT_CODE:-0}"
             'SENTINEL_HOST': '127.0.0.1', 'SENTINEL_PORT': '26379',
         })
 
+    def create_link(self, target):
+        """Windows使用临时目录联接，由Git Bash按目录软链接识别。"""
+        if os.name == 'nt':
+            env = dict(os.environ, TEST_LINK_PATH=str(self.current), TEST_LINK_TARGET=str(target))
+            subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
+                            'New-Item -ItemType Junction -Path $env:TEST_LINK_PATH '
+                            '-Target $env:TEST_LINK_TARGET | Out-Null'], env=env, check=True)
+        else:
+            self.current.symlink_to(target, target_is_directory=True)
+
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_script(self, action, service, **overrides):
+    def run_script(self, action, service, current=None, **overrides):
         """执行指定脚本，所有程序调用都指向测试替身。"""
         if self.log.exists():
             self.log.unlink()
         env = dict(self.env)
         env.update(overrides)
-        return subprocess.run([BASH, str(SCRIPTS / (action + '-' + service + '.sh'))],
+        command = [BASH, str(SCRIPTS / (action + '-' + service + '.sh'))]
+        if action == 'start':
+            command.append(shell_path(self.current) if current is None else current)
+        return subprocess.run(command,
                               env=env, capture_output=True, text=True, encoding='utf-8')
 
     def calls(self):
@@ -92,9 +112,51 @@ exit "${FAKE_EXIT_CODE:-0}"
             with self.subTest(service=service):
                 result = self.run_script('start', service)
                 self.assertEqual(result.returncode, 0, result.stderr)
+                binary = 'redis-server' if service == 'redis' else 'redis-sentinel'
+                self.assertIn(shell_path(self.version / 'bin' / binary), self.calls())
                 self.assertIn(shell_path(self.config), self.calls())
                 self.assertIn('--daemonize\nyes\n--supervised\nno', self.calls())
                 self.assertEqual('--sentinel' in self.calls(), service == 'sentinel')
+
+    def test_invalid_current_paths(self):
+        for service in ('redis', 'sentinel'):
+            for current in ('', '../current', shell_path(self.root / 'missing'), shell_path(self.version)):
+                result = self.run_script('start', service, current=current)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('current', result.stderr)
+                self.assertEqual(self.calls(), '')
+
+    def test_broken_current(self):
+        self.version.rename(self.root / 'removed-version')
+        for service in ('redis', 'sentinel'):
+            result = self.run_script('start', service)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('current', result.stderr)
+            self.assertEqual(self.calls(), '')
+
+    def test_missing_program(self):
+        for service, binary in (('redis', 'redis-server'), ('sentinel', 'redis-sentinel')):
+            (self.version / 'bin' / binary).unlink()
+            result = self.run_script('start', service)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('启动程序不存在', result.stderr)
+            self.assertEqual(self.calls(), '')
+
+    @unittest.skipIf(os.name == 'nt', 'Windows不支持用chmod模拟Linux执行权限')
+    def test_non_executable_program(self):
+        for service, binary in (('redis', 'redis-server'), ('sentinel', 'redis-sentinel')):
+            (self.version / 'bin' / binary).chmod(0o600)
+            result = self.run_script('start', service)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('没有执行权限', result.stderr)
+            self.assertEqual(self.calls(), '')
+
+    def test_missing_current_argument(self):
+        for service in ('redis', 'sentinel'):
+            result = subprocess.run([BASH, str(SCRIPTS / ('start-' + service + '.sh'))],
+                                    env=self.env, capture_output=True, text=True, encoding='utf-8')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(self.calls(), '')
 
     def test_missing_config(self):
         for service in ('redis', 'sentinel'):
@@ -148,7 +210,9 @@ exit "${FAKE_EXIT_CODE:-0}"
         for service in ('redis', 'sentinel'):
             for action in ('start', 'stop'):
                 result = subprocess.run(
-                    [BASH, str(SCRIPTS / (action + '-' + service + '.sh')), 'unexpected'],
+                    [BASH, str(SCRIPTS / (action + '-' + service + '.sh'))]
+                    + ([shell_path(self.current)] if action == 'start' else [])
+                    + ['unexpected'],
                     env=self.env, capture_output=True, text=True, encoding='utf-8')
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(self.calls(), '')

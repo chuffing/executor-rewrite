@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# 不接收平台参数，只使用执行器进程的本机环境配置。
-if [[ $# -ne 0 ]]; then
-    echo "Sentinel启动脚本不接收参数" >&2
+# current路径由Java传入，来自执行器已有的currentDir配置。
+if [[ $# -ne 1 ]]; then
+    echo "Sentinel启动脚本需要一个current软链接路径参数" >&2
     exit 1
 fi
 : "${SENTINEL_CONFIG_FILE:?请配置SENTINEL_CONFIG_FILE}"
@@ -22,13 +22,33 @@ if [[ ! -w "$config_file" ]]; then
     exit 1
 fi
 
-# 支持在PATH中查找，也支持配置固定的程序绝对路径。
-server_bin="$(command -v -- "${SENTINEL_SERVER_BIN:-redis-server}")" || {
-    echo "未找到Sentinel启动程序" >&2
+# 校验current软链接，解析本次启动使用的版本目录。
+current_dir="$1"
+if [[ "$current_dir" != /* ]]; then
+    echo "current软链接必须使用绝对路径：$current_dir" >&2
+    exit 1
+fi
+if [[ ! -L "$current_dir" ]]; then
+    echo "current软链接不存在或不是软链接：$current_dir" >&2
+    exit 1
+fi
+version_dir="$(readlink -f -- "$current_dir")" || {
+    echo "current软链接无法解析：$current_dir" >&2
     exit 1
 }
-if [[ ! -f "$server_bin" || ! -x "$server_bin" ]]; then
-    echo "Sentinel启动程序不是可执行文件" >&2
+if [[ ! -d "$version_dir" ]]; then
+    echo "current软链接未指向有效的版本目录：$current_dir" >&2
+    exit 1
+fi
+
+# 从current指向的版本中获取启动程序，不再查找旧程序或PATH。
+server_bin="$version_dir/bin/redis-sentinel"
+if [[ ! -f "$server_bin" ]]; then
+    echo "Sentinel启动程序不存在或不是普通文件：$server_bin" >&2
+    exit 1
+fi
+if [[ ! -x "$server_bin" ]]; then
+    echo "Sentinel启动程序没有执行权限：$server_bin" >&2
     exit 1
 fi
 

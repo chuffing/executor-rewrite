@@ -6,6 +6,9 @@ package com.icbc.nbfh.common.Enum;
  */
 public enum OperationType {
 
+    /**
+     * 检查新机部署所需的基础环境。
+     */
     PRECHECK_HOST,
 
     /**

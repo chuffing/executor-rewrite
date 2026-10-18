@@ -58,14 +58,14 @@ class DeployVersionServiceTest {
     /** Java只传三个业务参数，由脚本负责创建正式版本目录。 */
     @Test
     void shouldDeployIntoSeparateInstallDirectory() throws Exception {
-        when(scripts.execute(eq(ScriptType.DEPLOY_VERSION), anyLong(),
+        when(scripts.executeScript(eq(ScriptType.DEPLOY_VERSION), anyLong(),
                 anyString(), anyString(), anyString())).thenAnswer(invocation -> {
             Files.createDirectories(versions.resolve("6.2.19/bin"));
             return new CommandResultDTO(0, "", "", false);
         });
-        OperationResultDTO result = service.execute(params);
+        OperationResultDTO result = service.deployVersion(params);
         assertTrue(result.isSuccess());
-        verify(scripts).execute(ScriptType.DEPLOY_VERSION, 10,
+        verify(scripts).executeScript(ScriptType.DEPLOY_VERSION, 10,
                 packageFile.toString(), "6.2.19", versions.toAbsolutePath().toString());
         verify(packageService).deleteStagedPackage(packageFile);
         assertFalse(Files.exists(root.resolve("current")));
@@ -78,12 +78,12 @@ class DeployVersionServiceTest {
         Path existing = Files.createDirectory(versions.resolve("6.2.19"));
         Path marker = existing.resolve("keep");
         Files.write(marker, new byte[]{7});
-        when(scripts.execute(eq(ScriptType.DEPLOY_VERSION), anyLong(),
+        when(scripts.executeScript(eq(ScriptType.DEPLOY_VERSION), anyLong(),
                 anyString(), anyString(), anyString()))
                 .thenReturn(new CommandResultDTO(1, "", "目标版本已存在", false));
-        OperationResultDTO result = service.execute(params);
+        OperationResultDTO result = service.deployVersion(params);
         assertEquals(OperationErrorCode.COMMAND_EXECUTION_FAILED, result.getErrorCode());
-        verify(scripts).execute(eq(ScriptType.DEPLOY_VERSION), anyLong(),
+        verify(scripts).executeScript(eq(ScriptType.DEPLOY_VERSION), anyLong(),
                 anyString(), anyString(), anyString());
         assertArrayEquals(new byte[]{7}, Files.readAllBytes(marker));
     }
@@ -93,31 +93,31 @@ class DeployVersionServiceTest {
     void shouldRejectChangedPackage() throws Exception {
         Files.write(packageFile, new byte[]{4});
         assertEquals(OperationErrorCode.CHECKSUM_MISMATCH,
-                service.execute(params).getErrorCode());
+                service.deployVersion(params).getErrorCode());
         verifyNoInteractions(scripts);
     }
 
     /** 脚本超时继续保留现有超时错误码。 */
     @Test
     void shouldReportScriptTimeout() throws Exception {
-        when(scripts.execute(eq(ScriptType.DEPLOY_VERSION), anyLong(),
+        when(scripts.executeScript(eq(ScriptType.DEPLOY_VERSION), anyLong(),
                 anyString(), anyString(), anyString()))
                 .thenReturn(new CommandResultDTO(-1, "", "", true));
         assertEquals(OperationErrorCode.COMMAND_TIMEOUT,
-                service.execute(params).getErrorCode());
+                service.deployVersion(params).getErrorCode());
         verify(packageService).deleteStagedPackage(packageFile);
     }
 
     /** Java只解释退出码，正式目录是否完整由脚本确认。 */
     @Test
     void shouldUseScriptExitCodeAsDeploymentResult() throws Exception {
-        when(scripts.execute(eq(ScriptType.DEPLOY_VERSION), anyLong(),
+        when(scripts.executeScript(eq(ScriptType.DEPLOY_VERSION), anyLong(),
                 anyString(), anyString(), anyString()))
                 .thenReturn(new CommandResultDTO(1, "", "failed", false))
                 .thenReturn(new CommandResultDTO(0, "", "", false));
         assertEquals(OperationErrorCode.COMMAND_EXECUTION_FAILED,
-                service.execute(params).getErrorCode());
-        assertTrue(service.execute(params).isSuccess());
+                service.deployVersion(params).getErrorCode());
+        assertTrue(service.deployVersion(params).isSuccess());
     }
 
     /** 安装包不存在或是目录时，不计算摘要、不执行脚本。 */
@@ -125,10 +125,10 @@ class DeployVersionServiceTest {
     void shouldRejectMissingOrNonRegularPackage() throws Exception {
         Files.delete(packageFile);
         assertEquals(OperationErrorCode.PRECONDITION_FAILED,
-                service.execute(params).getErrorCode());
+                service.deployVersion(params).getErrorCode());
         Files.createDirectory(packageFile);
         assertEquals(OperationErrorCode.PRECONDITION_FAILED,
-                service.execute(params).getErrorCode());
+                service.deployVersion(params).getErrorCode());
         verifyNoInteractions(scripts);
         verify(packageService, times(2)).deleteStagedPackage(packageFile);
     }

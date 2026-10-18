@@ -16,7 +16,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
@@ -55,13 +54,6 @@ public class VersionPackageServiceImpl implements VersionPackageService {
 
         // 如果staging目录不存在，就创建。
         Files.createDirectories(stagingDirectory);
-
-        if (Files.isSymbolicLink(stagingDirectory)) {
-            throw new IOException("Redis安装包暂存目录不能是符号链接");
-        }
-        if (!Files.isDirectory(stagingDirectory, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException("Redis安装包暂存路径不是目录");
-        }
 
         // ======== 3. 创建独立上传目录 ========
 
@@ -162,12 +154,6 @@ public class VersionPackageServiceImpl implements VersionPackageService {
             }
             if (!stagingDirectory.equals(requestDirectory.getParent())) {
                 throw new IOException("安装包清理路径不在暂存目录内");
-            }
-            if (Files.isSymbolicLink(stagingDirectory)) {
-                throw new IOException("暂存目录不能是符号链接");
-            }
-            if (Files.isSymbolicLink(requestDirectory)) {
-                throw new IOException("上传子目录不能是符号链接");
             }
         } catch (IOException | RuntimeException e) {
             log.warn("Redis安装包清理路径检查失败，path={}", packagePath, e);

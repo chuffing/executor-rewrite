@@ -29,7 +29,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
      * 校验本地备份摘要并恢复Redis和Sentinel配置。
      */
     @Override
-    public OperationResultDTO execute(Map<String, String> params) {
+    public OperationResultDTO restoreConfig(Map<String, String> params) {
 
         // 获取开始时间。
         long startTime = System.currentTimeMillis();

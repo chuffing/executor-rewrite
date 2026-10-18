@@ -8,20 +8,13 @@ import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.entity.DTO.PlatformTaskDTO;
 import com.icbc.nbfh.entity.DTO.TaskResultReportDTO;
-import com.icbc.nbfh.service.AgentTaskService;
-import com.icbc.nbfh.service.RegisterService;
+import com.icbc.nbfh.service.*;
 import com.icbc.nbfh.client.PlatformClient;
-import com.icbc.nbfh.service.DeployVersionService;
-import com.icbc.nbfh.service.RestoreConfigService;
-import com.icbc.nbfh.service.StartRedisService;
-import com.icbc.nbfh.service.StartSentinelService;
-import com.icbc.nbfh.service.StopRedisService;
-import com.icbc.nbfh.service.StopSentinelService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -30,15 +23,18 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class AgentTaskServiceImpl implements AgentTaskService {
 
+    // 一个工作线程串行执行，最多允许一个任务等待。
     private final ThreadPoolExecutor executor =
             new ThreadPoolExecutor(
                     1,
                     1,
                     0L,
                     TimeUnit.MILLISECONDS,
-                    new SynchronousQueue<Runnable>(),
+                    new ArrayBlockingQueue<Runnable>(1),
                     new ThreadPoolExecutor.AbortPolicy()
             );
+
+    private final PrecheckHostService precheckHostService;
 
     private final StopRedisService stopRedisService;
 
@@ -50,7 +46,11 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
     private final RestoreConfigService restoreConfigService;
 
+    private final DeployConfigService deployConfigService;
+
     private final DeployVersionService deployVersionService;
+
+    private final SwitchVersionService switchVersionService;
 
     private final PlatformClient platformClient;
 
@@ -87,28 +87,40 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
             switch (operationType) {
 
+                case PRECHECK_HOST:
+                    result = precheckHostService.precheckHost();
+                    break;
+
                 case STOP_REDIS:
-                    result = stopRedisService.execute();
+                    result = stopRedisService.stopRedis();
                     break;
 
                 case START_REDIS:
-                    result = startRedisService.execute();
+                    result = startRedisService.startRedis();
                     break;
 
                 case STOP_SENTINEL:
-                    result = stopSentinelService.execute();
+                    result = stopSentinelService.stopSentinel();
                     break;
 
                 case START_SENTINEL:
-                    result = startSentinelService.execute();
+                    result = startSentinelService.startSentinel();
                     break;
 
                 case RESTORE_CONFIG:
-                    result = restoreConfigService.execute(task.getParams());
+                    result = restoreConfigService.restoreConfig(task.getParams());
+                    break;
+
+                case DEPLOY_CONFIG:
+                    result = deployConfigService.deployConfig(task.getParams());
                     break;
 
                 case DEPLOY_VERSION:
-                    result = deployVersionService.execute(task.getParams());
+                    result = deployVersionService.deployVersion(task.getParams());
+                    break;
+
+                case SWITCH_VERSION:
+                    result = switchVersionService.switchVersion(task.getParams());
                     break;
 
                 default:

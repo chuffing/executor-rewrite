@@ -11,10 +11,13 @@ import com.icbc.nbfh.entity.DTO.TaskResultReportDTO;
 import com.icbc.nbfh.service.RegisterService;
 import com.icbc.nbfh.client.PlatformClient;
 import com.icbc.nbfh.service.DeployVersionService;
+import com.icbc.nbfh.service.DeployConfigService;
 import com.icbc.nbfh.service.RestoreConfigService;
 import com.icbc.nbfh.service.StartRedisService;
 import com.icbc.nbfh.service.StartSentinelService;
 import com.icbc.nbfh.service.StopRedisService;
+import com.icbc.nbfh.service.PrecheckHostService;
+import com.icbc.nbfh.service.SwitchVersionService;
 import com.icbc.nbfh.service.StopSentinelService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -63,7 +66,7 @@ class AgentTaskServiceImplTest {
                         200L
                 );
 
-        when(stopRedisService.execute())
+        when(stopRedisService.stopRedis())
                 .thenReturn(operationResult);
         when(registerService.getAgentId())
                 .thenReturn("agent-001");
@@ -72,12 +75,15 @@ class AgentTaskServiceImplTest {
 
         AgentTaskServiceImpl service =
                 new AgentTaskServiceImpl(
+                        mock(PrecheckHostService.class),
                         stopRedisService,
                         startRedisService,
                         stopSentinelService,
                         startSentinelService,
                         restoreConfigService,
+                        mock(DeployConfigService.class),
                         deployVersionService,
+                        mock(SwitchVersionService.class),
                         platformClient,
                         registerService,
                         agentProperties
@@ -156,7 +162,7 @@ class AgentTaskServiceImplTest {
                         200L
                 );
 
-        when(startRedisService.execute())
+        when(startRedisService.startRedis())
                 .thenReturn(operationResult);
         when(registerService.getAgentId())
                 .thenReturn("agent-001");
@@ -165,12 +171,15 @@ class AgentTaskServiceImplTest {
 
         AgentTaskServiceImpl service =
                 new AgentTaskServiceImpl(
+                        mock(PrecheckHostService.class),
                         stopRedisService,
                         startRedisService,
                         stopSentinelService,
                         startSentinelService,
                         restoreConfigService,
+                        mock(DeployConfigService.class),
                         deployVersionService,
+                        mock(SwitchVersionService.class),
                         platformClient,
                         registerService,
                         agentProperties
@@ -185,7 +194,7 @@ class AgentTaskServiceImplTest {
         service.submitTask(task);
 
         // 3. 验证启动操作和上报报文。
-        verify(startRedisService, timeout(2000)).execute();
+        verify(startRedisService, timeout(2000)).startRedis();
 
         ArgumentCaptor<TaskResultReportDTO> captor =
                 ArgumentCaptor.forClass(TaskResultReportDTO.class);
@@ -243,7 +252,7 @@ class AgentTaskServiceImplTest {
                         200L
                 );
 
-        when(stopSentinelService.execute())
+        when(stopSentinelService.stopSentinel())
                 .thenReturn(operationResult);
         when(registerService.getAgentId())
                 .thenReturn("agent-001");
@@ -252,12 +261,15 @@ class AgentTaskServiceImplTest {
 
         AgentTaskServiceImpl service =
                 new AgentTaskServiceImpl(
+                        mock(PrecheckHostService.class),
                         stopRedisService,
                         startRedisService,
                         stopSentinelService,
                         startSentinelService,
                         restoreConfigService,
+                        mock(DeployConfigService.class),
                         deployVersionService,
+                        mock(SwitchVersionService.class),
                         platformClient,
                         registerService,
                         agentProperties
@@ -272,7 +284,7 @@ class AgentTaskServiceImplTest {
         service.submitTask(task);
 
         // 3. 验证停止操作和上报报文。
-        verify(stopSentinelService, timeout(2000)).execute();
+        verify(stopSentinelService, timeout(2000)).stopSentinel();
 
         ArgumentCaptor<TaskResultReportDTO> captor =
                 ArgumentCaptor.forClass(TaskResultReportDTO.class);
@@ -330,7 +342,7 @@ class AgentTaskServiceImplTest {
                         200L
                 );
 
-        when(startSentinelService.execute())
+        when(startSentinelService.startSentinel())
                 .thenReturn(operationResult);
         when(registerService.getAgentId())
                 .thenReturn("agent-001");
@@ -339,12 +351,15 @@ class AgentTaskServiceImplTest {
 
         AgentTaskServiceImpl service =
                 new AgentTaskServiceImpl(
+                        mock(PrecheckHostService.class),
                         stopRedisService,
                         startRedisService,
                         stopSentinelService,
                         startSentinelService,
                         restoreConfigService,
+                        mock(DeployConfigService.class),
                         deployVersionService,
+                        mock(SwitchVersionService.class),
                         platformClient,
                         registerService,
                         agentProperties
@@ -359,7 +374,7 @@ class AgentTaskServiceImplTest {
         service.submitTask(task);
 
         // 3. 验证启动操作和上报报文。
-        verify(startSentinelService, timeout(2000)).execute();
+        verify(startSentinelService, timeout(2000)).startSentinel();
 
         ArgumentCaptor<TaskResultReportDTO> captor =
                 ArgumentCaptor.forClass(TaskResultReportDTO.class);

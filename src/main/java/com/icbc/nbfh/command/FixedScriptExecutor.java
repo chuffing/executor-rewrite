@@ -48,19 +48,9 @@ public class FixedScriptExecutor {
     /**
      * 执行指定的Shell脚本。
      */
-    public CommandResultDTO execute(ScriptType scriptType, long timeoutSeconds)
-            throws IOException, InterruptedException {
-
-        return execute(scriptType, timeoutSeconds, new String[0]);
-    }
-
-
-    /**
-     * 执行指定的Shell脚本并传入独立参数。
-     */
-    public CommandResultDTO execute(ScriptType scriptType,
-                                    long timeoutSeconds,
-                                    String... arguments)
+    public CommandResultDTO executeScript(ScriptType scriptType,
+                                          long timeoutSeconds,
+                                          String... arguments)
             throws IOException, InterruptedException {
 
         // 1. 校验并获取脚本文件
@@ -81,6 +71,7 @@ public class FixedScriptExecutor {
             }
         }
 
+        // 创建ProcessBuilder对象用于配置和启动操作系统进程。
         ProcessBuilder processBuilder = new ProcessBuilder(command);
 
         // 设置脚本工作目录

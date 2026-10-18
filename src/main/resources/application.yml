@@ -20,6 +20,7 @@ agent:
   platform:
     url: ${AGENT_PLATFORM_URL:http://localhost:8100}
     register-code: ${AGENT_REGISTER_CODE:}
+    # 本地注册凭证文件；相对路径基于Java工作目录，生产环境建议配置独立绝对路径。
     token-file: ${AGENT_TOKEN_FILE:./agent-token.dat}
 
   # 定时任务
@@ -33,11 +34,17 @@ agent:
     port: ${REDIS_PORT:6379}
     password: ${REDIS_PASSWORD:}
     db: ${REDIS_DB:0}
+    # Redis连接超时，单位毫秒。
     timeout: ${REDIS_TIMEOUT:2000}
 
     service-name: ${REDIS_SERVICE_NAME:}
-    config-file: ${REDIS_CONFIG_FILE:}
-    data-dir: ${REDIS_DATA_DIR:}
+    # Redis正式配置文件，生产环境可通过环境变量覆盖。
+    # 启动脚本也读取REDIS_CONFIG_FILE，单独覆盖YAML时须同步进程环境变量。
+    config-file: ${REDIS_CONFIG_FILE:/opt/redis/conf/redis.conf}
+    # 预检查使用的数据目录，须事先存在。
+    # Redis实际数据位置仍由redis.conf中的dir等参数决定，两者须保持一致。
+    data-dir: ${REDIS_DATA_DIR:/opt/redis/data}
+    # RESTORE_CONFIG使用的已有备份文件，不由执行器自动生成。
     backup-file: ${REDIS_BACKUP_FILE:}
 
     pool:
@@ -51,19 +58,36 @@ agent:
     host: ${SENTINEL_HOST:127.0.0.1}
     port: ${SENTINEL_PORT:26379}
     password: ${SENTINEL_PASSWORD:}
+    # Sentinel连接超时，单位毫秒。
     timeout: ${SENTINEL_TIMEOUT:2000}
+    # START_SENTINEL检查所用的主从组名称，须与sentinel.conf中的monitor名称一致。
     service-name: ${SENTINEL_SERVICE_NAME:}
-    config-file: ${SENTINEL_CONFIG_FILE:}
+    # Sentinel正式配置文件，生产环境可通过环境变量覆盖。
+    # 启动脚本也读取SENTINEL_CONFIG_FILE，配置文件须允许Sentinel正常重写。
+    config-file: ${SENTINEL_CONFIG_FILE:/opt/redis/conf/sentinel.conf}
+    # RESTORE_CONFIG使用的已有备份文件，不由执行器自动生成。
     backup-file: ${SENTINEL_BACKUP_FILE:}
 
-  # 运维操作
+  # 运维操作：目录示例仅用于开发，生产路径以银行服务器实际环境为准。
+  # 不会在执行器启动或主机预检查时自动创建这些根目录。
   operation:
-    script-dir: ${AGENT_SCRIPT_DIR:}
+    # 固定Shell脚本目录，须事先准备7个已实现脚本。
+    script-dir: ${AGENT_SCRIPT_DIR:/opt/redis/scripts}
+    # 安装包暂存根目录，须事先存在；Java只自动创建其下staging及任务目录。
     package-dir: ${AGENT_PACKAGE_DIR:/opt/redis/packages/}
+    # Redis与Sentinel配置文件的暂存根目录，须事先存在。
+    config-file-dir: ${AGENT_CONFIG_FILE_DIR:/opt/redis/configfiles}
+    # 各版本正式安装根目录，须事先存在；部署脚本创建{targetVersion}/bin。
     install-dir: ${AGENT_INSTALL_DIR:/opt/redis/versions/}
+    # 当前版本软链接路径，不是真实目录；SWITCH_VERSION负责首次创建或切换。
     current-dir: ${AGENT_CURRENT_DIR:/opt/redis/current}
 
+    # 主机预检查的最低磁盘可用空间，单位字节，默认2 GiB。
+    min-free-space-bytes: ${AGENT_MIN_FREE_SPACE_BYTES:2147483648}
+
+    # Shell脚本总超时，单位秒；可由外部配置覆盖，当前默认10秒。
     script-timeout-seconds: 10
+    # Java启停健康检查：timeout单位秒，interval单位毫秒。
     stop-check-timeout-seconds: 10
     stop-check-interval-millis: 1000
     start-check-timeout-seconds: 30

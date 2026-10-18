@@ -20,6 +20,9 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(platformTokenInterceptor)
-                .addPathPatterns("/api/agent/task");
+                .addPathPatterns(
+                        "/api/agent/task",
+                        "/api/agent/config/deploy",
+                        "/api/agent/version/deploy");
     }
 }

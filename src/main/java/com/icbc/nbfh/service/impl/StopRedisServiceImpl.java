@@ -28,7 +28,7 @@ public class StopRedisServiceImpl implements StopRedisService {
      * 执行Redis停止操作并检查停止状态。
      */
     @Override
-    public OperationResultDTO execute() {
+    public OperationResultDTO stopRedis() {
 
         // 获取开始时间。
         long startTime = System.currentTimeMillis();
@@ -38,7 +38,7 @@ public class StopRedisServiceImpl implements StopRedisService {
 
         // 执行脚本。
         try {
-            commandResult = fixedScriptExecutor.execute(
+            commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.STOP_REDIS,
                     agentProperties.getOperation().getScriptTimeoutSeconds()
             );

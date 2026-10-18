@@ -1,15 +1,18 @@
 package com.icbc.nbfh.controller;
 
+import com.icbc.nbfh.common.Enum.OperationErrorCode;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.ParameterErrorCode;
 import com.icbc.nbfh.common.Enum.TaskSubmitStatus;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
+import com.icbc.nbfh.common.constant.ConfigFileConstants;
 import com.icbc.nbfh.common.constant.ValidationConstants;
 import com.icbc.nbfh.common.constant.VersionPackageConstants;
 import com.icbc.nbfh.common.exception.ParameterException;
 import com.icbc.nbfh.entity.DTO.PlatformTaskDTO;
 import com.icbc.nbfh.entity.VO.TaskSubmitResultVO;
 import com.icbc.nbfh.service.AgentTaskService;
+import com.icbc.nbfh.service.ConfigFileService;
 import com.icbc.nbfh.service.VersionPackageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -26,6 +29,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * 接收平台下发的运维任务。
@@ -38,6 +42,8 @@ public class AgentTaskController {
     private final AgentTaskService agentTaskService;
 
     private final VersionPackageService versionPackageService;
+
+    private final ConfigFileService configFileService;
 
     /**
      * 接收不携带文件的普通运维任务。
@@ -60,10 +66,27 @@ public class AgentTaskController {
             );
         }
 
-        // 3. 提交任务。
-        agentTaskService.submitTask(request);
+        if (OperationType.DEPLOY_CONFIG == operationType) {
+            throw new ParameterException(ParameterErrorCode.TASK_PARAM_INVALID,
+                    "配置部署任务必须通过配置文件上传接口提交");
+        }
 
-        // 4. 返回任务接收结果。
+        // 3. 提交任务，等待队列已满时返回繁忙。
+        try {
+            agentTaskService.submitTask(request);
+        } catch (RejectedExecutionException e) {
+            TaskSubmitResultVO result = new TaskSubmitResultVO(
+                    request.getTaskNo(),
+                    TaskSubmitStatus.BUSY.name(),
+                    "执行器繁忙，任务未接收"
+            );
+
+            return ResponseEntity
+                    .status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(result);
+        }
+
+
         TaskSubmitResultVO result = new TaskSubmitResultVO(
                 request.getTaskNo(),
                 TaskSubmitStatus.ACCEPTED.name(),
@@ -104,7 +127,7 @@ public class AgentTaskController {
         // 3. 校验上传文件的基础信息。
         validateVersionPackage(file, request.getParams().get(TaskParamConstants.TARGET_VERSION));
 
-        // 4. 创建一个新的hashMap，后面需要增加packageLocalPath。
+        // 4. 创建一个新的hashMap，后面需要增加packageLocalPath。（不改动原先的Params
         Map<String, String> params = new HashMap<>(request.getParams());
         // 将复制后的Map重新设置到任务DTO中。
         request.setParams(params);
@@ -132,12 +155,24 @@ public class AgentTaskController {
 
             // 把任务交给后台异步执行。
             agentTaskService.submitTask(request);
+        } catch (RejectedExecutionException e) {
+            // 部署任务未接收，清理本次已保存的安装包。
+            versionPackageService.deleteStagedPackage(packagePath);
+
+            TaskSubmitResultVO result = new TaskSubmitResultVO(
+                    request.getTaskNo(),
+                    TaskSubmitStatus.BUSY.name(),
+                    "执行器繁忙，任务未接收"
+            );
+
+            return ResponseEntity
+                    .status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(result);
         } catch (RuntimeException e) {
             versionPackageService.deleteStagedPackage(packagePath);
             throw e;
         }
 
-        // 8. 创建任务提交成功的响应对象。
         TaskSubmitResultVO result = new TaskSubmitResultVO(
                 request.getTaskNo(),
                 TaskSubmitStatus.ACCEPTED.name(),
@@ -148,6 +183,73 @@ public class AgentTaskController {
                 .status(HttpStatus.ACCEPTED)
                 .body(result);
     }
+
+    /**
+     * 接收平台上传的Redis和Sentinel配置文件。
+     * 两份文件保存并校验成功后，将配置部署任务提交给后台执行。
+     */
+    @PostMapping(value = "/config/deploy", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<TaskSubmitResultVO> receiveConfigDeployTask(
+            @RequestPart("task") PlatformTaskDTO request,
+            @RequestPart("redisFile") MultipartFile redisFile,
+            @RequestPart("sentinelFile") MultipartFile sentinelFile) throws IOException {
+
+        // 校验任务参数和类型。
+        OperationType operationType = validateTask(request);
+        if (OperationType.DEPLOY_CONFIG != operationType) {
+            throw new ParameterException(ParameterErrorCode.TASK_TYPE_UNSUPPORTED,
+                    "配置上传接口只接收配置部署任务");
+        }
+
+        // 检查Redis配置文件是否为空、是否超过限制大小。
+        validateConfigFile(redisFile, "Redis");
+        // 检查Sentinel配置文件是否为空、是否超过限制大小。
+        validateConfigFile(sentinelFile, "Sentinel");
+
+
+        Map<String, String> params = new HashMap<>(request.getParams());
+
+        // saveAndValidate方法会：
+        // 1. 创建配置文件暂存目录；
+        // 2. 保存redis.conf；
+        // 3. 保存sentinel.conf；
+        // 4. 校验两份文件的SHA256；
+        // 5. 成功后返回本次任务的暂存目录。
+        Path directory = configFileService.saveAndValidate(
+                request.getTaskNo(),
+                params.get(TaskParamConstants.REDIS_CONFIG_SHA256),
+                params.get(TaskParamConstants.SENTINEL_CONFIG_SHA256),
+                redisFile,
+                sentinelFile);
+
+        params.put(TaskParamConstants.REDIS_CONFIG_LOCAL_PATH,
+                directory.resolve(ConfigFileConstants.REDIS_FILE_NAME).toString());
+        params.put(TaskParamConstants.SENTINEL_CONFIG_LOCAL_PATH,
+                directory.resolve(ConfigFileConstants.SENTINEL_FILE_NAME).toString());
+        request.setParams(params);
+
+        try {
+            agentTaskService.submitTask(request);
+
+        } catch (RejectedExecutionException e) {
+            configFileService.deleteStagedFiles(directory);
+            TaskSubmitResultVO result = new TaskSubmitResultVO(request.getTaskNo(),
+                    TaskSubmitStatus.BUSY.name(), "执行器繁忙，任务未接收");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(result);
+
+        } catch (RuntimeException e) {
+            configFileService.deleteStagedFiles(directory);
+            throw e;
+        }
+
+        TaskSubmitResultVO result = new TaskSubmitResultVO(
+                request.getTaskNo(),
+                TaskSubmitStatus.ACCEPTED.name(),
+                "任务已接收");
+
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(result);
+    }
+
 
     /**
      * 校验平台下发的任务参数。
@@ -205,19 +307,37 @@ public class AgentTaskController {
 
         // 4. 校验不同操作需要的参数。
         switch (operationType) {
+            case PRECHECK_HOST:
+                // 预检查只使用本机配置，禁止由任务报文指定路径或端口。
+                if (request.getParams() != null && !request.getParams().isEmpty()) {
+                    throw new ParameterException(
+                            ParameterErrorCode.TASK_PARAM_INVALID,
+                            "主机预检查不接收任务参数"
+                    );
+                }
+                break;
+
             case START_REDIS:
             case STOP_REDIS:
             case START_SENTINEL:
             case STOP_SENTINEL:
-                // 以上操作不接收任务参数。
+                // 以上操作不接收任务参数，无需额外校验。
                 break;
 
             case RESTORE_CONFIG:
                 validateRestoreConfigParams(request.getParams());
                 break;
 
+            case DEPLOY_CONFIG:
+                validateDeployConfigParams(request.getParams());
+                break;
+
             case DEPLOY_VERSION:
                 validateDeployVersionParams(request.getParams());
+                break;
+
+            case SWITCH_VERSION:
+                validateSwitchVersionParams(request.getParams());
                 break;
 
             default:
@@ -226,6 +346,81 @@ public class AgentTaskController {
 
         return operationType;
     }
+
+    /**
+     * 校验切换版本操作需要的目标版本号参数。
+     * @param params
+     */
+    private void validateSwitchVersionParams(Map<String, String> params) {
+
+        if(params == null) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "版本切换参数不能为空"
+            );
+        }
+
+        // 获取目标版本号。
+        String targetVersion = params.get(TaskParamConstants.TARGET_VERSION);
+
+        // 检查目标版本号是否为空。
+        if(targetVersion == null || targetVersion.trim().isEmpty()) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "目标版本号不能为空"
+            );
+        }
+
+        // 检查目标版本号格式。
+        if(!ValidationConstants.VERSION_PATTERN.matcher(targetVersion).matches()) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "目标版本号格式不正确"
+            );
+        }
+    }
+
+    /** 校验部署配置文件的两个SHA256摘要。 */
+    private void validateDeployConfigParams(Map<String, String> params) {
+
+        if (params == null) {
+            throw new ParameterException(ParameterErrorCode.TASK_PARAM_INVALID,
+                    "配置部署参数不能为空");
+        }
+
+        String redisSha256 = params.get(TaskParamConstants.REDIS_CONFIG_SHA256);
+        if (redisSha256 == null
+                || !ValidationConstants.SHA256_PATTERN.matcher(redisSha256).matches()) {
+            throw new ParameterException(ParameterErrorCode.TASK_PARAM_INVALID,
+                    "Redis配置文件摘要格式不正确");
+        }
+
+        String sentinelSha256 = params.get(TaskParamConstants.SENTINEL_CONFIG_SHA256);
+        if (sentinelSha256 == null
+                || !ValidationConstants.SHA256_PATTERN.matcher(sentinelSha256).matches()) {
+            throw new ParameterException(ParameterErrorCode.TASK_PARAM_INVALID,
+                    "Sentinel配置文件摘要格式不正确");
+        }
+
+        if (params.size() != 2) {
+            throw new ParameterException(ParameterErrorCode.TASK_PARAM_INVALID,
+                    "配置部署任务参数只允许两份文件的SHA256");
+        }
+    }
+
+    /** 检查上传文件是否非空及是否超过每份1 MiB上限。 */
+    private void validateConfigFile(MultipartFile file, String name) {
+
+        if (file == null || file.isEmpty()) {
+            throw new ParameterException(ParameterErrorCode.CONFIG_FILE_INVALID,
+                    name + "配置文件不能为空");
+        }
+        if (file.getSize() > ValidationConstants.MAX_CONFIG_FILE_SIZE_BYTES) {
+            throw new ParameterException(ParameterErrorCode.CONFIG_FILE_INVALID,
+                    name + "配置文件不能超过1 MiB");
+        }
+    }
+
 
     /**
      * 校验配置恢复操作需要的文件摘要参数。

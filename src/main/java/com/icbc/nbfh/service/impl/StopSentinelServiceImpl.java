@@ -29,7 +29,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
      * 执行Sentinel停止操作并检查停止状态。
      */
     @Override
-    public OperationResultDTO execute() {
+    public OperationResultDTO stopSentinel() {
 
         // 获取开始时间。
         long startTime = System.currentTimeMillis();
@@ -39,7 +39,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
 
         // 执行脚本。
         try {
-            commandResult = fixedScriptExecutor.execute(
+            commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.STOP_SENTINEL,
                     agentProperties.getOperation().getScriptTimeoutSeconds()
             );
