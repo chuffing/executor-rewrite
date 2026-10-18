@@ -7,6 +7,7 @@ import com.icbc.nbfh.common.Enum.TaskSubmitStatus;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.common.constant.ConfigFileConstants;
 import com.icbc.nbfh.common.constant.ValidationConstants;
+import com.icbc.nbfh.common.constant.VersionPackageConstants;
 import com.icbc.nbfh.common.exception.ParameterException;
 import com.icbc.nbfh.entity.DTO.PlatformTaskDTO;
 import com.icbc.nbfh.entity.VO.TaskSubmitResultVO;
@@ -37,15 +38,6 @@ import java.util.concurrent.RejectedExecutionException;
 @RequestMapping("/api/agent")
 @RequiredArgsConstructor
 public class AgentTaskController {
-
-    /** 安装包原始文件名允许的最大长度。 */
-    private static final int MAX_PACKAGE_FILE_NAME_LENGTH = 128;
-
-    /** Redis运行包文件名前缀。 */
-    private static final String RUNTIME_PACKAGE_PREFIX = "redis-";
-
-    /** Redis运行包文件名后缀。 */
-    private static final String RUNTIME_PACKAGE_SUFFIX = "-runtime.tar.gz";
 
     private final AgentTaskService agentTaskService;
 
@@ -578,7 +570,8 @@ public class AgentTaskController {
                     "Redis安装包文件名不能包含首尾空格"
             );
         }
-        if (originalFileName.length() > MAX_PACKAGE_FILE_NAME_LENGTH) {
+        if (originalFileName.length()
+                > ValidationConstants.MAX_PACKAGE_FILE_NAME_LENGTH) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,
                     "Redis安装包文件名过长"
@@ -596,8 +589,8 @@ public class AgentTaskController {
                     "Redis安装包文件名不能包含父目录标记"
             );
         }
-        String expectedFileName = RUNTIME_PACKAGE_PREFIX
-                + targetVersion + RUNTIME_PACKAGE_SUFFIX;
+        String expectedFileName = VersionPackageConstants.RUNTIME_PACKAGE_PREFIX
+                + targetVersion + VersionPackageConstants.RUNTIME_PACKAGE_SUFFIX;
         if (!expectedFileName.equals(originalFileName)) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,

@@ -1,5 +1,6 @@
 package com.icbc.nbfh.util;
 
+import com.icbc.nbfh.common.constant.RedisProtocolConstants;
 import org.springframework.util.StringUtils;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.exceptions.JedisException;
@@ -18,9 +19,6 @@ import java.util.List;
  */
 public final class RedisCheckUtil {
 
-    /** Redis和Sentinel的PING成功响应。 */
-    private static final String PONG = "PONG";
-
     private static final int PORT_CHECK_TIMEOUT_MILLIS = 500;
 
     /**
@@ -37,7 +35,8 @@ public final class RedisCheckUtil {
                 password,
                 timeout
         )) {
-            return PONG.equalsIgnoreCase(jedis.ping());
+            return RedisProtocolConstants.PONG
+                    .equalsIgnoreCase(jedis.ping());
 
         } catch (JedisException e) {
             return false;
@@ -60,7 +59,8 @@ public final class RedisCheckUtil {
                 password,
                 timeout
         )) {
-            if (!PONG.equalsIgnoreCase(jedis.ping())) {
+            if (!RedisProtocolConstants.PONG
+                    .equalsIgnoreCase(jedis.ping())) {
                 return false;
             }
 

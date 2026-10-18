@@ -34,8 +34,6 @@ import static org.mockito.Mockito.*;
 /** 原始字节接收及清理边界测试，仅使用临时目录。 */
 class ConfigFileServiceTest {
 
-    private static final String STAGING_DIRECTORY_NAME = "staging";
-
     @TempDir
     Path root;
 
@@ -63,7 +61,8 @@ class ConfigFileServiceTest {
         assertTrue(directory.getFileName().toString().startsWith("TASK202610170001-config-"));
         assertArrayEquals(redis, Files.readAllBytes(directory.resolve(ConfigFileConstants.REDIS_FILE_NAME)));
         assertArrayEquals(sentinel, Files.readAllBytes(directory.resolve(ConfigFileConstants.SENTINEL_FILE_NAME)));
-        assertEquals(configFiles.resolve(STAGING_DIRECTORY_NAME), directory.getParent());
+        assertEquals(configFiles.resolve(ConfigFileConstants.STAGING_DIRECTORY_NAME),
+                directory.getParent());
         if (Files.getFileStore(configFiles).supportsFileAttributeView("posix")) {
             assertEquals(PosixFilePermissions.fromString("rwx------"), Files.getPosixFilePermissions(directory));
             assertEquals(PosixFilePermissions.fromString("rw-------"),
@@ -79,7 +78,8 @@ class ConfigFileServiceTest {
         Path unusedPackages = root.resolve("missing-packages");
         properties.getOperation().setPackageDir(unusedPackages.toString());
         Path directory = upload();
-        assertEquals(configFiles.toRealPath().resolve(STAGING_DIRECTORY_NAME),
+        assertEquals(configFiles.toRealPath().resolve(
+                        ConfigFileConstants.STAGING_DIRECTORY_NAME),
                 directory.getParent());
         assertFalse(Files.exists(unusedPackages));
         files.deleteStagedFiles(directory);
@@ -94,10 +94,12 @@ class ConfigFileServiceTest {
         properties.getOperation().setConfigFileDir(configured.toString());
         properties.getOperation().setPackageDir(configFiles.toString());
         Path directory = upload();
-        assertEquals(configured.resolve(STAGING_DIRECTORY_NAME), directory.getParent());
+        assertEquals(configured.resolve(ConfigFileConstants.STAGING_DIRECTORY_NAME),
+                directory.getParent());
         assertTrue(Files.exists(directory.resolve(ConfigFileConstants.REDIS_FILE_NAME)));
         assertTrue(Files.exists(directory.resolve(ConfigFileConstants.SENTINEL_FILE_NAME)));
-        assertFalse(Files.exists(configFiles.resolve(STAGING_DIRECTORY_NAME)));
+        assertFalse(Files.exists(configFiles.resolve(
+                ConfigFileConstants.STAGING_DIRECTORY_NAME)));
         files.deleteStagedFiles(directory);
         assertFalse(Files.exists(directory));
     }

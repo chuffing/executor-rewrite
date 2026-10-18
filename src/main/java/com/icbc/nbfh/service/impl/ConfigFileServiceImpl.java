@@ -30,12 +30,6 @@ import java.nio.file.attribute.PosixFilePermissions;
 @RequiredArgsConstructor
 public class ConfigFileServiceImpl implements ConfigFileService {
 
-    /** 配置文件暂存子目录。 */
-    private static final String STAGING_DIRECTORY_NAME = "staging";
-
-    /** 配置上传任务目录的固定标记。 */
-    private static final String DIRECTORY_MARKER = "-config-";
-
     private final AgentProperties agentProperties;
 
     /**
@@ -53,7 +47,7 @@ public class ConfigFileServiceImpl implements ConfigFileService {
         // 直接读取application.yml中的暂存根目录。
         Path staging = Paths.get(
                 agentProperties.getOperation().getConfigFileDir(),
-                STAGING_DIRECTORY_NAME);
+                ConfigFileConstants.STAGING_DIRECTORY_NAME);
 
         // 如果staging不存在，就创建。
         Files.createDirectories(staging);
@@ -70,7 +64,7 @@ public class ConfigFileServiceImpl implements ConfigFileService {
         // 创建独立暂存目录。
         Path requestDirectory = Files.createTempDirectory(
                 staging,
-                taskNo + DIRECTORY_MARKER,
+                taskNo + ConfigFileConstants.DIRECTORY_MARKER,
                 attributes);
 
         boolean completed = false;
@@ -176,7 +170,7 @@ public class ConfigFileServiceImpl implements ConfigFileService {
         // 暂存根目录来自application.yml。
         Path staging = Paths.get(
                 agentProperties.getOperation().getConfigFileDir(),
-                STAGING_DIRECTORY_NAME);
+                ConfigFileConstants.STAGING_DIRECTORY_NAME);
 
         // 只允许清理staging下的直接子目录。
         if (!staging.equals(requestDirectory.getParent())) {
