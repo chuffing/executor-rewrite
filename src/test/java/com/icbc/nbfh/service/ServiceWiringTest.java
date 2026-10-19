@@ -2,6 +2,7 @@ package com.icbc.nbfh.service;
 
 import com.icbc.nbfh.client.PlatformClient;
 import com.icbc.nbfh.collector.RedisInfoCollector;
+import com.icbc.nbfh.collector.RecoveryTopologyCollector;
 import com.icbc.nbfh.command.FixedScriptExecutor;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.controller.AgentTaskController;
@@ -38,6 +39,7 @@ class ServiceWiringTest {
                     assertTrue(context.isRunning());
                     Class<?>[] interfaces = {
                             AgentTaskService.class,
+                            TaskResultReportService.class,
                             PrecheckHostService.class,
                             CollectService.class,
                             HeartbeatService.class,
@@ -47,6 +49,7 @@ class ServiceWiringTest {
                             StartSentinelService.class,
                             StopSentinelService.class,
                             RestoreConfigService.class,
+                            RecoveryTopologyVerifyService.class,
                             DeployConfigService.class,
                             ConfigFileService.class,
                             DeployVersionService.class,
@@ -110,6 +113,12 @@ class ServiceWiringTest {
         @Bean
         RedisInfoCollector redisInfoCollector() {
             return mock(RedisInfoCollector.class);
+        }
+
+        /** 阻止测试采集真实Redis和Sentinel拓扑。 */
+        @Bean
+        RecoveryTopologyCollector recoveryTopologyCollector() {
+            return mock(RecoveryTopologyCollector.class);
         }
     }
 }

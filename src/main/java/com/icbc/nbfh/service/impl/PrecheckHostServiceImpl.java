@@ -17,6 +17,7 @@ import org.springframework.util.StringUtils;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.FileStore;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -80,6 +81,22 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
             // 对Sentinel配置文件进行相同检查。
             checkConfigTarget(agentProperties.getSentinel().getConfigFile(), "Sentinel配置文件");
 
+            // 检查独立磁盘上的两份故障恢复备份路径。
+            checkConfigTarget(agentProperties.getRedis().getBackupFile(), "Redis备份配置文件");
+            checkConfigTarget(agentProperties.getSentinel().getBackupFile(), "Sentinel备份配置文件");
+
+            // 生产Linux环境要求正式配置与备份位于不同文件系统。
+            checkSeparateBackupFileSystem(
+                    agentProperties.getRedis().getConfigFile(),
+                    agentProperties.getRedis().getBackupFile(),
+                    "Redis"
+            );
+            checkSeparateBackupFileSystem(
+                    agentProperties.getSentinel().getConfigFile(),
+                    agentProperties.getSentinel().getBackupFile(),
+                    "Sentinel"
+            );
+
 
             // 检查current软链接是否合法。
             // 新服务器允许尚未创建current。
@@ -88,10 +105,6 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
 
             // 从配置读取最低磁盘可用空间要求。
             long minimum = operation.getMinFreeSpaceBytes();
-            // 最低可用空间必须大于0，否则说明配置不合理。
-            if (minimum <= 0) {
-                throw new IllegalArgumentException("磁盘最低可用空间必须大于0");
-            }
 
             // 获取安装包暂存目录所在文件系统的可用空间。
             long packageAvailable = FileValidationUtil.getUsableSpace(packages);
@@ -182,14 +195,17 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
             return OperationResultDTO.failure(OperationErrorCode.CONFIG_INVALID,
                     e.getMessage(), startTime, System.currentTimeMillis());
 
+
         } catch (FileNotFoundException e) {
             return OperationResultDTO.failure(OperationErrorCode.COMMAND_NOT_FOUND,
                     "主机预检查脚本不存在", startTime, System.currentTimeMillis());
+
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return OperationResultDTO.failure(OperationErrorCode.UNKNOWN_ERROR,
                     "主机预检查被中断", startTime, System.currentTimeMillis());
+
 
         } catch (IOException e) {
             log.error("主机环境检查失败", e);
@@ -236,6 +252,31 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
 
                 throw new IllegalArgumentException(name + "不是可读写的普通文件");
             }
+        }
+    }
+
+    /**
+     * 检查正式配置与备份配置是否位于不同文件系统。
+     * Windows开发环境没有Linux挂载点语义，因此只在支持POSIX属性时强制检查。
+     */
+    private void checkSeparateBackupFileSystem(
+            String configFile,
+            String backupFile,
+            String name) throws IOException {
+
+        Path configParent = Paths.get(configFile).normalize().getParent();
+        Path backupParent = Paths.get(backupFile).normalize().getParent();
+
+        FileStore configStore = Files.getFileStore(configParent);
+        if (!configStore.supportsFileAttributeView("posix")) {
+            return;
+        }
+
+        FileStore backupStore = Files.getFileStore(backupParent);
+        if (configStore.equals(backupStore)) {
+            throw new IllegalArgumentException(
+                    name + "正式配置与备份配置必须位于不同挂载磁盘"
+            );
         }
     }
 

@@ -1,7 +1,6 @@
 package com.icbc.nbfh.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.icbc.nbfh.client.PlatformClient;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.TaskResultStatus;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
@@ -59,15 +58,16 @@ class DeployConfigTaskTest {
             assertTrue(release.await(5, TimeUnit.SECONDS));
             return realDeployment.deployConfig(invocation.getArgument(0));
         });
-        PlatformClient platform = mock(PlatformClient.class);
+        TaskResultReportService resultReports =
+                mock(TaskResultReportService.class);
         RegisterService registration = mock(RegisterService.class);
         when(registration.getAgentId()).thenReturn("test-agent");
-        when(registration.getToken()).thenReturn("test-token");
         AgentTaskServiceImpl tasks = new AgentTaskServiceImpl(
                 mock(PrecheckHostService.class), mock(StopRedisService.class), mock(StartRedisService.class),
                 mock(StopSentinelService.class), mock(StartSentinelService.class), mock(RestoreConfigService.class),
+                mock(com.icbc.nbfh.service.RecoveryTopologyVerifyService.class),
                 deployment, mock(DeployVersionService.class), mock(SwitchVersionService.class),
-                platform, registration, properties);
+                resultReports, registration);
         ThreadPoolExecutor worker = (ThreadPoolExecutor) ReflectionTestUtils.getField(tasks, "executor");
         try {
             AgentTaskController controller = new AgentTaskController(tasks, mock(VersionPackageService.class), files);
@@ -78,7 +78,7 @@ class DeployConfigTaskTest {
             PlatformTaskDTO task = task(redis, sentinel);
             MockMultipartFile metadata = new MockMultipartFile("task", "", MediaType.APPLICATION_JSON_VALUE,
                     new ObjectMapper().writeValueAsBytes(task));
-            assertEquals(202, mvc.perform(multipart("/api/agent/config/deploy").file(metadata)
+            assertEquals(200, mvc.perform(multipart("/api/agent/config/deploy").file(metadata)
                     .file(new MockMultipartFile("redisFile", "redis.conf", "application/octet-stream", redis))
                     .file(new MockMultipartFile("sentinelFile", "sentinel.conf", "application/octet-stream", sentinel)))
                     .andReturn().getResponse().getStatus());
@@ -95,8 +95,8 @@ class DeployConfigTaskTest {
             release.countDown();
 
             ArgumentCaptor<TaskResultReportDTO> report = ArgumentCaptor.forClass(TaskResultReportDTO.class);
-            verify(platform, timeout(5000)).reportTaskResult(
-                    report.capture(), eq("http://test-platform"), eq("test-token"));
+            verify(resultReports, timeout(5000))
+                    .saveAndReport(report.capture());
             assertEquals(task.getTaskNo(), report.getValue().getTaskNo());
             assertEquals(task.getStepNo(), report.getValue().getStepNo());
             assertEquals(OperationType.DEPLOY_CONFIG.name(), report.getValue().getOperationType());
@@ -132,7 +132,7 @@ class DeployConfigTaskTest {
         PlatformTaskDTO request = task(redis, sentinel);
         request.getParams().put(redisChecksum ? TaskParamConstants.REDIS_CONFIG_SHA256
                 : TaskParamConstants.SENTINEL_CONFIG_SHA256, sha256(new byte[]{99}));
-        assertEquals(400, mvc.perform(multipart("/api/agent/config/deploy")
+        assertEquals(200, mvc.perform(multipart("/api/agent/config/deploy")
                 .file(new MockMultipartFile("task", "", "application/json", new ObjectMapper().writeValueAsBytes(request)))
                 .file(new MockMultipartFile("redisFile", redis)).file(new MockMultipartFile("sentinelFile", sentinel)))
                 .andReturn().getResponse().getStatus());
@@ -154,7 +154,7 @@ class DeployConfigTaskTest {
         byte[] sentinel = {2};
         assertEquals(503, controller.receiveConfigDeployTask(task(redis, sentinel),
                 new MockMultipartFile("redisFile", redis), new MockMultipartFile("sentinelFile", sentinel))
-                .getStatusCodeValue());
+                .getCode());
         try (Stream<Path> requests = Files.list(root.resolve("configfiles/staging"))) {
             assertEquals(0, requests.count());
         }
@@ -166,6 +166,8 @@ class DeployConfigTaskTest {
         properties.getOperation().setConfigFileDir(Files.createDirectory(root.resolve("configfiles")).toString());
         properties.getRedis().setConfigFile(root.resolve("redis.conf").toString());
         properties.getSentinel().setConfigFile(root.resolve("sentinel.conf").toString());
+        properties.getRedis().setBackupFile(root.resolve("redis.backup").toString());
+        properties.getSentinel().setBackupFile(root.resolve("sentinel.backup").toString());
         properties.getPlatform().setUrl("http://test-platform");
         return properties;
     }

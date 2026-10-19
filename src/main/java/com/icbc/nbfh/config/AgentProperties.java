@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
 
 import javax.validation.Valid;
+import javax.validation.constraints.Min;
 import javax.validation.constraints.NotBlank;
 
 @Data
@@ -23,6 +24,10 @@ public class AgentProperties {
     /** 定时任务配置。 */
     private ScheduleConfig schedule = new ScheduleConfig();
 
+    /** 任务结果本地保存及重试配置。 */
+    @Valid
+    private TaskResultConfig taskResult = new TaskResultConfig();
+
     /** Redis 配置。 */
     @Valid
     private RedisConfig redis = new RedisConfig();
@@ -32,6 +37,7 @@ public class AgentProperties {
     private SentinelConfig sentinel = new SentinelConfig();
 
     /** 运维操作配置。 */
+    @Valid
     private OperationConfig operation = new OperationConfig();
 
 
@@ -57,6 +63,23 @@ public class AgentProperties {
 
         /** 心跳间隔，毫秒。 */
         private long heartbeatInterval = 30000;
+    }
+
+
+    @Data
+    public static class TaskResultConfig {
+
+        /** 待上报任务结果的本地保存目录。 */
+        @NotBlank(message = "任务结果保存目录不能为空")
+        private String directory = "./task-results";
+
+        /** 任务结果上报失败后的重试间隔，毫秒。 */
+        @Min(value = 1000, message = "任务结果重试间隔不能小于1000毫秒")
+        private long retryIntervalMillis = 10000;
+
+        /** 包含首次上报在内的最大上报次数。 */
+        @Min(value = 1, message = "任务结果最大上报次数不能小于1")
+        private int maxAttempts = 5;
     }
 
 
@@ -147,5 +170,13 @@ public class AgentProperties {
 
         /** Redis 启动检查间隔，毫秒。 */
         private long startCheckIntervalMillis = 1000;
+
+        /** 故障恢复拓扑验收超时，秒。 */
+        @Min(value = 1, message = "拓扑验收超时不能小于1秒")
+        private long topologyCheckTimeoutSeconds = 60;
+
+        /** 故障恢复拓扑验收间隔，毫秒。 */
+        @Min(value = 100, message = "拓扑验收间隔不能小于100毫秒")
+        private long topologyCheckIntervalMillis = 5000;
     }
 }

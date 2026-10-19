@@ -1,10 +1,8 @@
 package com.icbc.nbfh.service.impl;
 
-import com.icbc.nbfh.client.PlatformClient;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.TaskResultStatus;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
-import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.entity.DTO.PlatformTaskDTO;
 import com.icbc.nbfh.entity.DTO.TaskResultReportDTO;
@@ -15,7 +13,6 @@ import org.mockito.ArgumentCaptor;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /** 脚本与平台通信均使用替身，验证切换任务的结果上报。 */
@@ -25,18 +22,17 @@ class SwitchVersionTaskTest {
     @Test
     void shouldDispatchSwitchAndReportResult() {
         SwitchVersionService switching = mock(SwitchVersionService.class);
-        PlatformClient platform = mock(PlatformClient.class);
+        TaskResultReportService resultReports =
+                mock(TaskResultReportService.class);
         RegisterService registration = mock(RegisterService.class);
-        AgentProperties properties = new AgentProperties();
-        properties.getPlatform().setUrl("http://test-platform");
         when(registration.getAgentId()).thenReturn("agent-test");
-        when(registration.getToken()).thenReturn("test-token");
         AgentTaskServiceImpl tasks = new AgentTaskServiceImpl(
                 mock(PrecheckHostService.class),
                 mock(StopRedisService.class), mock(StartRedisService.class),
                 mock(StopSentinelService.class), mock(StartSentinelService.class),
-                mock(RestoreConfigService.class), mock(DeployConfigService.class), mock(DeployVersionService.class),
-                switching, platform, registration, properties);
+                mock(RestoreConfigService.class), mock(com.icbc.nbfh.service.RecoveryTopologyVerifyService.class),
+                mock(DeployConfigService.class), mock(DeployVersionService.class),
+                switching, resultReports, registration);
         PlatformTaskDTO task = new PlatformTaskDTO();
         task.setTaskNo("TASK202610170001");
         task.setStepNo(2);
@@ -48,8 +44,8 @@ class SwitchVersionTaskTest {
         tasks.submitTask(task);
 
         ArgumentCaptor<TaskResultReportDTO> report = ArgumentCaptor.forClass(TaskResultReportDTO.class);
-        verify(platform, timeout(2000)).reportTaskResult(
-                report.capture(), eq("http://test-platform"), eq("test-token"));
+        verify(resultReports, timeout(2000))
+                .saveAndReport(report.capture());
         verify(switching).switchVersion(task.getParams());
         assertEquals(OperationType.SWITCH_VERSION.name(), report.getValue().getOperationType());
         assertEquals(TaskResultStatus.SUCCESS.name(), report.getValue().getStatus());

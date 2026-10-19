@@ -1,10 +1,11 @@
 package com.icbc.nbfh.config.interceptor;
 
+import cn.hutool.http.HttpStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.icbc.nbfh.common.ResultBean;
 import com.icbc.nbfh.entity.VO.ErrorResultVO;
 import com.icbc.nbfh.service.RegisterService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -42,16 +43,23 @@ public class PlatformTokenInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        response.setStatus(HttpStatus.UNAUTHORIZED.value());
+        response.setStatus(HttpStatus.HTTP_UNAUTHORIZED);
         response.setCharacterEncoding("UTF-8");
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 
         ErrorResultVO result = new ErrorResultVO(
-                HttpStatus.UNAUTHORIZED.name(),
+                String.valueOf(HttpStatus.HTTP_UNAUTHORIZED),
                 "身份校验失败",
                 "平台令牌无效"
         );
-        objectMapper.writeValue(response.getWriter(), result);
+        objectMapper.writeValue(
+                response.getWriter(),
+                ResultBean.resultBean(
+                        result,
+                        HttpStatus.HTTP_UNAUTHORIZED,
+                        result.getMsg()
+                )
+        );
         return false;
     }
 }

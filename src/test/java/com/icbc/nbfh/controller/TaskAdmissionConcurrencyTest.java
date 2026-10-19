@@ -3,7 +3,6 @@ package com.icbc.nbfh.controller;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import com.alibaba.fastjson.JSON;
-import com.icbc.nbfh.client.PlatformClient;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.TaskSubmitStatus;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
@@ -55,7 +54,7 @@ class TaskAdmissionConcurrencyTest {
     private MockMvc mvc;
     private StartRedisService starting;
     private DeployVersionService deploying;
-    private PlatformClient platform;
+    private TaskResultReportService resultReports;
     private ThreadPoolExecutor worker;
     private final CountDownLatch operationRelease = new CountDownLatch(1);
     private final CountDownLatch reportRelease = new CountDownLatch(1);
@@ -74,19 +73,18 @@ class TaskAdmissionConcurrencyTest {
         rootLogger.setLevel(Level.WARN);
         AgentProperties properties = new AgentProperties();
         properties.getOperation().setPackageDir(packages.toString());
-        properties.getPlatform().setUrl("http://test-platform");
         RegisterService registration = mock(RegisterService.class);
         when(registration.getAgentId()).thenReturn("test-agent");
-        when(registration.getToken()).thenReturn("test-token");
         starting = mock(StartRedisService.class);
         deploying = mock(DeployVersionService.class);
-        platform = mock(PlatformClient.class);
+        resultReports = mock(TaskResultReportService.class);
         AgentTaskServiceImpl tasks = new AgentTaskServiceImpl(
                 mock(PrecheckHostService.class),
                 mock(StopRedisService.class), starting,
                 mock(StopSentinelService.class), mock(StartSentinelService.class),
-                mock(RestoreConfigService.class), mock(DeployConfigService.class), deploying, mock(SwitchVersionService.class),
-                platform, registration, properties);
+                mock(RestoreConfigService.class), mock(com.icbc.nbfh.service.RecoveryTopologyVerifyService.class),
+                mock(DeployConfigService.class), deploying, mock(SwitchVersionService.class),
+                resultReports, registration);
         worker = (ThreadPoolExecutor) ReflectionTestUtils.getField(tasks, "executor");
         AgentTaskController controller = new AgentTaskController(tasks, new VersionPackageServiceImpl(properties), mock(ConfigFileService.class));
         mvc = MockMvcBuilders.standaloneSetup(controller)
@@ -145,20 +143,24 @@ class TaskAdmissionConcurrencyTest {
         return task;
     }
 
-    /** 通过MVC请求链提交JSON，校验HTTP状态和接收状态一致。 */
+    /** 通过MVC请求链提交JSON，校验统一响应业务码和接收状态一致。 */
     private int submit(int number) throws Exception {
         MockHttpServletResponse response = mvc.perform(post("/api/agent/task")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(JSON.toJSONBytes(task(number, OperationType.START_REDIS))))
                 .andReturn().getResponse();
-        String status = JSON.parseObject(response.getContentAsString()).getString("status");
-        if (response.getStatus() == 202) {
+        assertEquals(200, response.getStatus());
+        com.alibaba.fastjson.JSONObject responseJson =
+                JSON.parseObject(response.getContentAsString());
+        int code = responseJson.getIntValue("code");
+        String status = responseJson.getJSONObject("data").getString("status");
+        if (code == 202) {
             assertEquals(TaskSubmitStatus.ACCEPTED.name(), status);
         } else {
-            assertEquals(503, response.getStatus(), response.getContentAsString());
+            assertEquals(503, code, response.getContentAsString());
             assertEquals(TaskSubmitStatus.BUSY.name(), status);
         }
-        return response.getStatus();
+        return code;
     }
 
     /** 64个客户端线程发起1000次提交，只允许一个等待任务，释放后能够恢复接收。 */
@@ -194,7 +196,8 @@ class TaskAdmissionConcurrencyTest {
         assertEquals(1, worker.getMaximumPoolSize());
         assertEquals(1, operationCount.get());
         operationRelease.countDown();
-        verify(platform, timeout(5000).times(2)).reportTaskResult(any(), anyString(), anyString());
+        verify(resultReports, timeout(5000).times(2))
+                .saveAndReport(any());
         // 工作线程的顺序屏障，确保前两个任务完成后再验证恢复接收。
         worker.submit(() -> { }).get(5, TimeUnit.SECONDS);
         assertEquals(202, submit(2000));
@@ -203,7 +206,7 @@ class TaskAdmissionConcurrencyTest {
         assertEquals(3, operationCount.get());
         assertEquals(1, maximumActive.get());
         assertEquals(1, executionThreads.size(), "不能由HTTP请求线程代替执行任务");
-        verify(platform, times(3)).reportTaskResult(any(), anyString(), anyString());
+        verify(resultReports, times(3)).saveAndReport(any());
         System.out.println("BURST: clients=64, requests=1000, queued=1, busy503=999, maxConcurrentOperations=1, recovery=202");
     }
 
@@ -218,7 +221,7 @@ class TaskAdmissionConcurrencyTest {
                 assertTrue(reportRelease.await(10, TimeUnit.SECONDS));
             }
             return null;
-        }).when(platform).reportTaskResult(any(), anyString(), anyString());
+        }).when(resultReports).saveAndReport(any());
         assertEquals(202, submit(1));
         assertTrue(reportEntered.await(5, TimeUnit.SECONDS));
         assertEquals(202, submit(2));
@@ -264,8 +267,13 @@ class TaskAdmissionConcurrencyTest {
                     MockHttpServletResponse response = mvc.perform(multipart("/api/agent/version/deploy")
                             .file(taskPart).file(filePart)).andReturn().getResponse();
                     assertEquals(TaskSubmitStatus.BUSY.name(), JSON.parseObject(
-                            response.getContentAsString(StandardCharsets.UTF_8)).getString("status"));
-                    return response.getStatus();
+                                    response.getContentAsString(StandardCharsets.UTF_8))
+                            .getJSONObject("data")
+                            .getString("status"));
+                    assertEquals(200, response.getStatus());
+                    return JSON.parseObject(
+                            response.getContentAsString(StandardCharsets.UTF_8))
+                            .getIntValue("code");
                 }));
             }
             for (Future<Integer> response : responses) {

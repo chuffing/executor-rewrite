@@ -31,6 +31,7 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** 使用真实MVC拦截器配置验证三个任务入口，不连接平台或启动后台任务。 */
@@ -101,12 +102,13 @@ class TaskEndpointAuthenticationTest {
         verifyNoInteractions(tasks, configFiles, packages);
     }
 
-    /** 正确身份仍可按原有接口提交任务，返回202。 */
+    /** 正确身份可提交任务，HTTP返回200且响应体业务码为202。 */
     @ParameterizedTest
     @ValueSource(strings = {"/api/agent/task", "/api/agent/config/deploy", "/api/agent/version/deploy"})
     void shouldAcceptCorrectToken(String path) throws Exception {
         mvc.perform(taskRequest(path).header("Authorization", "Bearer test-token"))
-                .andExpect(status().isAccepted());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(202));
         verify(tasks).submitTask(any(PlatformTaskDTO.class));
     }
 

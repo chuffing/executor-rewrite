@@ -6,6 +6,7 @@ import com.icbc.nbfh.entity.DTO.HeartbeatRequestDTO;
 import com.icbc.nbfh.entity.DTO.MetricDataDTO;
 import com.icbc.nbfh.entity.DTO.RegisterRequestDTO;
 import com.icbc.nbfh.entity.DTO.TaskResultReportDTO;
+import com.icbc.nbfh.common.constant.TaskResultConstants;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -69,17 +70,69 @@ public class PlatformClient {
                                  String platformUrl,
                                  String token) {
 
-        String url = platformUrl + "/api/task/report";
+        String url = platformUrl + TaskResultConstants.REPORT_PATH;
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Authorization", "Bearer " + token);
+        headers.set(
+                TaskResultConstants.AUTHORIZATION_HEADER,
+                TaskResultConstants.BEARER_PREFIX + token
+        );
 
         HttpEntity<String> entity = new HttpEntity<>(
                 JSON.toJSONString(request),
                 headers
         );
 
-        restTemplate.postForEntity(url, entity, String.class);
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                url,
+                entity,
+                String.class
+        );
+
+        validateTaskResultResponse(response.getBody());
+    }
+
+    /**
+     * 校验平台是否真正接收并保存了任务结果。
+     */
+    private void validateTaskResultResponse(String responseBody) {
+
+        if (responseBody == null || responseBody.trim().isEmpty()) {
+            throw new IllegalStateException("平台任务结果响应为空");
+        }
+
+        Map<String, Object> response;
+        try {
+            response = JSON.parseObject(
+                    responseBody,
+                    new TypeReference<Map<String, Object>>() {
+                    }
+            );
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "平台任务结果响应格式错误",
+                    e
+            );
+        }
+
+        Object codeValue = response.get("code");
+        if (!(codeValue instanceof Number)) {
+            throw new IllegalStateException("平台任务结果响应缺少状态码");
+        }
+
+        int code = ((Number) codeValue).intValue();
+        if (code != TaskResultConstants.PLATFORM_SUCCESS_CODE) {
+            // 新版统一响应使用msg，兼容尚未升级平台的message字段。
+            Object message = response.get("msg");
+            if (message == null) {
+                message = response.get("message");
+            }
+            throw new IllegalStateException(
+                    message == null
+                            ? "平台拒绝接收任务结果，code=" + code
+                            : String.valueOf(message)
+            );
+        }
     }
 }

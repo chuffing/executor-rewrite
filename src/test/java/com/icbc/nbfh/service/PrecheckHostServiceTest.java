@@ -49,6 +49,9 @@ class PrecheckHostServiceTest {
         Path configs = Files.createDirectory(root.resolve("configs"));
         properties.getRedis().setConfigFile(configs.resolve("redis.conf").toString());
         properties.getSentinel().setConfigFile(configs.resolve("sentinel.conf").toString());
+        Path backups = Files.createDirectory(root.resolve("backups"));
+        properties.getRedis().setBackupFile(backups.resolve("redis.conf").toString());
+        properties.getSentinel().setBackupFile(backups.resolve("sentinel.conf").toString());
         properties.getSentinel().setServiceName("test-master");
         properties.getRedis().setHost("127.0.0.1");
         properties.getSentinel().setHost("127.0.0.1");

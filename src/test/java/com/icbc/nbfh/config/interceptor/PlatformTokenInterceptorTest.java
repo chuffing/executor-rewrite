@@ -101,13 +101,13 @@ class PlatformTokenInterceptorTest {
         assertEquals(401, response.getStatus());
 
         assertEquals(
-                HttpStatus.UNAUTHORIZED.name(),
+                HttpStatus.UNAUTHORIZED.value(),
                 new ObjectMapper()
                         .readTree(
                                 response.getContentAsString()
                         )
                         .get("code")
-                        .asText()
+                        .asInt()
         );
 
         assertEquals(
@@ -126,6 +126,7 @@ class PlatformTokenInterceptorTest {
                         .readTree(
                                 response.getContentAsString()
                         )
+                        .get("data")
                         .get("errorMsg")
                         .asText()
         );

@@ -25,7 +25,8 @@ class PrecheckHostControllerTest {
         task.setTaskNo("TASK202610170001");
         task.setStepNo(1);
         task.setOperationType(OperationType.PRECHECK_HOST.name());
-        assertEquals(HttpStatus.ACCEPTED, controller.receiveTask(task).getStatusCode());
+        assertEquals(HttpStatus.ACCEPTED.value(),
+                controller.receiveTask(task).getCode());
         verify(tasks).submitTask(task);
     }
 

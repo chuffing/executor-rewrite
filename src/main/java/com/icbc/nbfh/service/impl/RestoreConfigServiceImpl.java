@@ -3,10 +3,8 @@ package com.icbc.nbfh.service.impl;
 import com.icbc.nbfh.service.RestoreConfigService;
 
 import com.icbc.nbfh.common.Enum.OperationErrorCode;
-import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
-import com.icbc.nbfh.util.FileChecksumUtil;
 import com.icbc.nbfh.util.FileValidationUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -17,7 +15,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -26,23 +23,15 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
     private final AgentProperties agentProperties;
 
     /**
-     * 校验本地备份摘要并恢复Redis和Sentinel配置。
+     * 使用执行器本地备份恢复Redis和Sentinel配置。
      */
     @Override
-    public OperationResultDTO restoreConfig(Map<String, String> params) {
+    public OperationResultDTO restoreConfig() {
 
         // 获取开始时间。
         long startTime = System.currentTimeMillis();
 
-        // 1. 读取已经校验完成的任务参数。
-        String expectedRedisSha256 = params.get(
-                TaskParamConstants.REDIS_CONFIG_SHA256
-        );
-        String expectedSentinelSha256 = params.get(
-                TaskParamConstants.SENTINEL_CONFIG_SHA256
-        );
-
-        // 2. 读取本地配置文件路径。
+        // 1. 读取本地配置文件路径。
         String redisBackupFile = agentProperties.getRedis().getBackupFile();
         String redisConfigFile = agentProperties.getRedis().getConfigFile();
         String sentinelBackupFile =
@@ -50,7 +39,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
         String sentinelConfigFile =
                 agentProperties.getSentinel().getConfigFile();
 
-        // 3. 检查执行器本地配置是否完整。
+        // 2. 检查执行器本地配置是否完整。
         if (!StringUtils.hasText(redisBackupFile)
                 || !StringUtils.hasText(redisConfigFile)
                 || !StringUtils.hasText(sentinelBackupFile)
@@ -68,7 +57,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
         Path sentinelBackupPath = Paths.get(sentinelBackupFile.trim());
         Path sentinelConfigPath = Paths.get(sentinelConfigFile.trim());
 
-        // 4. 检查两份备份文件是否存在并且可读。
+        // 3. 检查两份备份文件是否存在并且可读。
         if (!FileValidationUtil.isReadableFile(redisBackupPath)
                 || !FileValidationUtil.isReadableFile(
                 sentinelBackupPath)) {
@@ -80,7 +69,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
             );
         }
 
-        // 5. 检查目标配置文件所在目录是否可写。
+        // 4. 检查目标配置文件所在目录是否可写。
         if (!FileValidationUtil.isWritableTarget(redisConfigPath)
                 || !FileValidationUtil.isWritableTarget(
                 sentinelConfigPath)) {
@@ -93,35 +82,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
         }
 
         try {
-            // 6. 计算并校验Redis备份文件摘要。
-            String redisConfigSha256 =
-                    FileChecksumUtil.calculateSha256(redisBackupPath);
-
-            if (!redisConfigSha256.equalsIgnoreCase(
-                    expectedRedisSha256)) {
-                return OperationResultDTO.failure(
-                        OperationErrorCode.CHECKSUM_MISMATCH,
-                        "Redis备份配置文件摘要不一致",
-                        startTime,
-                        System.currentTimeMillis()
-                );
-            }
-
-            // 7. 计算并校验Sentinel备份文件摘要。
-            String sentinelConfigSha256 =
-                    FileChecksumUtil.calculateSha256(sentinelBackupPath);
-
-            if (!sentinelConfigSha256.equalsIgnoreCase(
-                    expectedSentinelSha256)) {
-                return OperationResultDTO.failure(
-                        OperationErrorCode.CHECKSUM_MISMATCH,
-                        "Sentinel备份配置文件摘要不一致",
-                        startTime,
-                        System.currentTimeMillis()
-                );
-            }
-
-            // 8. 两份摘要都正确后覆盖正式配置文件。
+            // 5. 备份文件由执行器本机配置确定，直接覆盖正式配置文件。
             Files.copy(
                     redisBackupPath,
                     redisConfigPath,
@@ -142,7 +103,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
         } catch (IOException e) {
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_EXECUTION_FAILED,
-                    "配置文件校验或恢复失败",
+                    "配置文件恢复失败",
                     startTime,
                     System.currentTimeMillis()
             );

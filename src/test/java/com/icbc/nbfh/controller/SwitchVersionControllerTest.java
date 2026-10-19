@@ -29,7 +29,8 @@ class SwitchVersionControllerTest {
         task.setOperationType(OperationType.SWITCH_VERSION.name());
         task.setParams(Collections.singletonMap(TaskParamConstants.TARGET_VERSION, "6.2.19"));
 
-        assertEquals(HttpStatus.ACCEPTED, controller.receiveTask(task).getStatusCode());
+        assertEquals(HttpStatus.ACCEPTED.value(),
+                controller.receiveTask(task).getCode());
         verify(tasks).submitTask(task);
     }
 

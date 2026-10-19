@@ -1,9 +1,11 @@
 package com.icbc.nbfh.controller;
 
+import cn.hutool.http.HttpStatus;
 import com.icbc.nbfh.common.Enum.OperationErrorCode;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.ParameterErrorCode;
 import com.icbc.nbfh.common.Enum.TaskSubmitStatus;
+import com.icbc.nbfh.common.ResultBean;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.common.constant.ConfigFileConstants;
 import com.icbc.nbfh.common.constant.ValidationConstants;
@@ -15,9 +17,7 @@ import com.icbc.nbfh.service.AgentTaskService;
 import com.icbc.nbfh.service.ConfigFileService;
 import com.icbc.nbfh.service.VersionPackageService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -52,7 +52,7 @@ public class AgentTaskController {
      * @return 任务接收结果
      */
     @PostMapping("/task")
-    public ResponseEntity<TaskSubmitResultVO> receiveTask(
+    public ResultBean<TaskSubmitResultVO> receiveTask(
             @RequestBody PlatformTaskDTO request) {
 
         // 1. 校验任务参数。
@@ -74,6 +74,7 @@ public class AgentTaskController {
         // 3. 提交任务，等待队列已满时返回繁忙。
         try {
             agentTaskService.submitTask(request);
+
         } catch (RejectedExecutionException e) {
             TaskSubmitResultVO result = new TaskSubmitResultVO(
                     request.getTaskNo(),
@@ -81,9 +82,11 @@ public class AgentTaskController {
                     "执行器繁忙，任务未接收"
             );
 
-            return ResponseEntity
-                    .status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(result);
+            return ResultBean.resultBean(
+                    result,
+                    HttpStatus.HTTP_UNAVAILABLE,
+                    result.getMessage()
+            );
         }
 
 
@@ -93,9 +96,11 @@ public class AgentTaskController {
                 "任务已接收"
         );
 
-        return ResponseEntity
-                .status(HttpStatus.ACCEPTED)
-                .body(result);
+        return ResultBean.resultBean(
+                result,
+                HttpStatus.HTTP_ACCEPTED,
+                result.getMessage()
+        );
     }
 
     /**
@@ -109,7 +114,7 @@ public class AgentTaskController {
             value = "/version/deploy",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
     )
-    public ResponseEntity<TaskSubmitResultVO> receiveVersionDeployTask(
+    public ResultBean<TaskSubmitResultVO> receiveVersionDeployTask(
             @RequestPart("task") PlatformTaskDTO request,
             @RequestPart("file") MultipartFile file) throws IOException {
 
@@ -165,9 +170,11 @@ public class AgentTaskController {
                     "执行器繁忙，任务未接收"
             );
 
-            return ResponseEntity
-                    .status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(result);
+            return ResultBean.resultBean(
+                    result,
+                    HttpStatus.HTTP_UNAVAILABLE,
+                    result.getMessage()
+            );
         } catch (RuntimeException e) {
             versionPackageService.deleteStagedPackage(packagePath);
             throw e;
@@ -179,9 +186,11 @@ public class AgentTaskController {
                 "任务已接收"
         );
 
-        return ResponseEntity
-                .status(HttpStatus.ACCEPTED)
-                .body(result);
+        return ResultBean.resultBean(
+                result,
+                HttpStatus.HTTP_ACCEPTED,
+                result.getMessage()
+        );
     }
 
     /**
@@ -189,7 +198,7 @@ public class AgentTaskController {
      * 两份文件保存并校验成功后，将配置部署任务提交给后台执行。
      */
     @PostMapping(value = "/config/deploy", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<TaskSubmitResultVO> receiveConfigDeployTask(
+    public ResultBean<TaskSubmitResultVO> receiveConfigDeployTask(
             @RequestPart("task") PlatformTaskDTO request,
             @RequestPart("redisFile") MultipartFile redisFile,
             @RequestPart("sentinelFile") MultipartFile sentinelFile) throws IOException {
@@ -235,7 +244,11 @@ public class AgentTaskController {
             configFileService.deleteStagedFiles(directory);
             TaskSubmitResultVO result = new TaskSubmitResultVO(request.getTaskNo(),
                     TaskSubmitStatus.BUSY.name(), "执行器繁忙，任务未接收");
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(result);
+            return ResultBean.resultBean(
+                    result,
+                    HttpStatus.HTTP_UNAVAILABLE,
+                    result.getMessage()
+            );
 
         } catch (RuntimeException e) {
             configFileService.deleteStagedFiles(directory);
@@ -247,7 +260,11 @@ public class AgentTaskController {
                 TaskSubmitStatus.ACCEPTED.name(),
                 "任务已接收");
 
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(result);
+        return ResultBean.resultBean(
+                result,
+                HttpStatus.HTTP_ACCEPTED,
+                result.getMessage()
+        );
     }
 
 
@@ -321,11 +338,15 @@ public class AgentTaskController {
             case STOP_REDIS:
             case START_SENTINEL:
             case STOP_SENTINEL:
-                // 以上操作不接收任务参数，无需额外校验。
-                break;
-
             case RESTORE_CONFIG:
-                validateRestoreConfigParams(request.getParams());
+            case VERIFY_RECOVERY_TOPOLOGY:
+                // 以上操作只使用执行器本机配置，不接收任务参数。
+                if (request.getParams() != null && !request.getParams().isEmpty()) {
+                    throw new ParameterException(
+                            ParameterErrorCode.TASK_PARAM_INVALID,
+                            "当前任务类型不接收任务参数"
+                    );
+                }
                 break;
 
             case DEPLOY_CONFIG:
@@ -421,47 +442,6 @@ public class AgentTaskController {
         }
     }
 
-
-    /**
-     * 校验配置恢复操作需要的文件摘要参数。
-     *
-     * @param params 任务参数
-     */
-    private void validateRestoreConfigParams(Map<String, String> params) {
-
-        if (params == null) {
-            throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
-                    "配置恢复参数不能为空"
-            );
-        }
-
-        String redisConfigSha256 = params.get(
-                TaskParamConstants.REDIS_CONFIG_SHA256
-        );
-
-        if (redisConfigSha256 == null
-                || !ValidationConstants.SHA256_PATTERN
-                .matcher(redisConfigSha256).matches()) {
-            throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
-                    "Redis配置文件摘要格式不正确"
-            );
-        }
-
-        String sentinelConfigSha256 = params.get(
-                TaskParamConstants.SENTINEL_CONFIG_SHA256
-        );
-
-        if (sentinelConfigSha256 == null
-                || !ValidationConstants.SHA256_PATTERN
-                .matcher(sentinelConfigSha256).matches()) {
-            throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
-                    "Sentinel配置文件摘要格式不正确"
-            );
-        }
-    }
 
     /**
      * 校验版本部署操作需要的安装包参数。

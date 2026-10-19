@@ -1,11 +1,9 @@
 package com.icbc.nbfh.service;
 
 import com.icbc.nbfh.common.Enum.OperationErrorCode;
-import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.service.impl.RestoreConfigServiceImpl;
-import com.icbc.nbfh.util.FileChecksumUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -13,8 +11,6 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -25,8 +21,6 @@ class RestoreConfigServiceTest {
     Path root;
 
     private RestoreConfigService service;
-    private Map<String, String> params;
-
     /** 准备两份可信备份和独立的临时配置目录。 */
     @BeforeEach
     void prepare() throws Exception {
@@ -39,11 +33,6 @@ class RestoreConfigServiceTest {
         properties.getSentinel().setBackupFile(sentinelBackup.toString());
         properties.getRedis().setConfigFile(root.resolve("redis.conf").toString());
         properties.getSentinel().setConfigFile(root.resolve("sentinel.conf").toString());
-        params = new HashMap<>();
-        params.put(TaskParamConstants.REDIS_CONFIG_SHA256,
-                FileChecksumUtil.calculateSha256(redisBackup));
-        params.put(TaskParamConstants.SENTINEL_CONFIG_SHA256,
-                FileChecksumUtil.calculateSha256(sentinelBackup));
         service = new RestoreConfigServiceImpl(properties);
     }
 
@@ -51,7 +40,7 @@ class RestoreConfigServiceTest {
     @Test
     void shouldRestoreRegularConfigurationTargets() throws Exception {
         Files.write(root.resolve("redis.conf"), "old".getBytes(StandardCharsets.UTF_8));
-        assertTrue(service.restoreConfig(params).isSuccess());
+        assertTrue(service.restoreConfig().isSuccess());
         assertEquals("redis-backup", new String(
                 Files.readAllBytes(root.resolve("redis.conf")), StandardCharsets.UTF_8));
         assertEquals("sentinel-backup", new String(
@@ -64,7 +53,7 @@ class RestoreConfigServiceTest {
         Path redisConfig = Files.write(root.resolve("redis.conf"),
                 "keep".getBytes(StandardCharsets.UTF_8));
         Files.createDirectory(root.resolve("sentinel.conf"));
-        OperationResultDTO result = service.restoreConfig(params);
+        OperationResultDTO result = service.restoreConfig();
         assertEquals(OperationErrorCode.CONFIG_INVALID, result.getErrorCode());
         assertEquals("keep", new String(Files.readAllBytes(redisConfig), StandardCharsets.UTF_8));
         assertTrue(Files.isDirectory(root.resolve("sentinel.conf")));

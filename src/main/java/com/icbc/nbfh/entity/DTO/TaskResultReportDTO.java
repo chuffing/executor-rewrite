@@ -2,11 +2,13 @@ package com.icbc.nbfh.entity.DTO;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * 执行器向平台上报的任务结果。
  */
 @Data
+@NoArgsConstructor
 @AllArgsConstructor
 public class TaskResultReportDTO {
 

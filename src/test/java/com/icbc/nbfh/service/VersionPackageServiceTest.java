@@ -17,12 +17,12 @@ import com.icbc.nbfh.common.constant.ValidationConstants;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.TaskSubmitStatus;
+import com.icbc.nbfh.common.ResultBean;
 import com.icbc.nbfh.common.exception.ParameterException;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.controller.AgentTaskController;
 import com.icbc.nbfh.entity.DTO.PlatformTaskDTO;
 import com.icbc.nbfh.entity.VO.TaskSubmitResultVO;
-import org.springframework.http.ResponseEntity;
 import com.icbc.nbfh.util.FileChecksumUtil;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -114,7 +114,7 @@ class VersionPackageServiceTest {
                 task.getParams().get(TaskParamConstants.PACKAGE_SHA256), file))
                 .thenReturn(staged);
         AgentTaskController controller = new AgentTaskController(tasks, packages, mock(ConfigFileService.class));
-        assertEquals(202, controller.receiveVersionDeployTask(task, file).getStatusCodeValue());
+        assertEquals(202, controller.receiveVersionDeployTask(task, file).getCode());
         verify(tasks).submitTask(task);
         assertEquals(staged.toString(),
                 task.getParams().get(TaskParamConstants.PACKAGE_LOCAL_PATH));
@@ -132,12 +132,14 @@ class VersionPackageServiceTest {
         PlatformTaskDTO task = createTask();
         task.getParams().put(TaskParamConstants.PACKAGE_SHA256, checksum(archive));
         AgentTaskController controller = new AgentTaskController(tasks, packages, mock(ConfigFileService.class));
-        ResponseEntity<TaskSubmitResultVO> response =
+        ResultBean<TaskSubmitResultVO> response =
                 controller.receiveVersionDeployTask(task, upload(archive));
-        assertEquals(503, response.getStatusCodeValue());
-        assertNotNull(response.getBody());
-        assertEquals(TaskSubmitStatus.BUSY.name(), response.getBody().getStatus());
-        assertEquals(task.getTaskNo(), response.getBody().getTaskNo());
+        assertEquals(503, response.getCode());
+        assertNotNull(response.getData());
+        assertEquals(TaskSubmitStatus.BUSY.name(),
+                response.getData().getStatus());
+        assertEquals(task.getTaskNo(),
+                response.getData().getTaskNo());
         assertEquals(0, stagingEntryCount());
     }
 

@@ -47,6 +47,8 @@ class DeployConfigServiceTest {
     private byte[] sentinelBytes;
     private Path redisTarget;
     private Path sentinelTarget;
+    private Path redisBackup;
+    private Path sentinelBackup;
 
     /** 准备本地固定路径及包含中文和不同换行的配置文本。 */
     @BeforeEach
@@ -56,6 +58,10 @@ class DeployConfigServiceTest {
         sentinelTarget = root.resolve("sentinel.conf");
         properties.getRedis().setConfigFile(redisTarget.toString());
         properties.getSentinel().setConfigFile(sentinelTarget.toString());
+        redisBackup = root.resolve("redis.backup");
+        sentinelBackup = root.resolve("sentinel.backup");
+        properties.getRedis().setBackupFile(redisBackup.toString());
+        properties.getSentinel().setBackupFile(sentinelBackup.toString());
         properties.getOperation().setConfigFileDir(Files.createDirectory(root.resolve("configfiles")).toString());
         files = new ConfigFileServiceImpl(properties);
         service = new DeployConfigServiceImpl(properties, files);
@@ -117,6 +123,23 @@ class DeployConfigServiceTest {
         Files.write(redisTarget, redisBytes);
         assertTrue(service.deployConfig(params).isSuccess());
         assertConfigContents();
+        assertNoTemporaryFiles();
+    }
+
+    /** 正式配置成功后备份失败时必须明确返回失败，不能误报整项成功。 */
+    @Test
+    void shouldReportBackupFailureAfterFormalDeployment() throws Exception {
+        Files.createDirectory(redisBackup);
+        Files.write(redisBackup.resolve("keep"), new byte[]{9});
+
+        OperationResultDTO result = service.deployConfig(params);
+
+        assertEquals(OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                result.getErrorCode());
+        assertTrue(result.getMessage().contains("正式配置已部署"));
+        assertArrayEquals(redisBytes, Files.readAllBytes(redisTarget));
+        assertArrayEquals(sentinelBytes, Files.readAllBytes(sentinelTarget));
+        assertFalse(Files.exists(sentinelBackup));
         assertNoTemporaryFiles();
     }
 
@@ -197,6 +220,10 @@ class DeployConfigServiceTest {
                 Files.readAllBytes(redisTarget));
         assertArrayEquals(sentinelBytes,
                 Files.readAllBytes(sentinelTarget));
+        assertArrayEquals(redisBytes,
+                Files.readAllBytes(redisBackup));
+        assertArrayEquals(sentinelBytes,
+                Files.readAllBytes(sentinelBackup));
     }
 
     /** 测试目录中不应遗留任何本次配置部署临时文件。 */

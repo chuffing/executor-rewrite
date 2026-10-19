@@ -28,6 +28,15 @@ agent:
     collect-interval: ${AGENT_COLLECT_INTERVAL:300000}
     heartbeat-interval: ${AGENT_HEARTBEAT_INTERVAL:30000}
 
+  # 运维任务结果本地保存及补报
+  task-result:
+    # 相对路径基于Java工作目录，生产环境建议配置独立绝对路径。
+    directory: ${AGENT_TASK_RESULT_DIR:./task-results}
+    # 上报失败后每10秒重试一次。
+    retry-interval-millis: ${AGENT_TASK_RESULT_RETRY_INTERVAL:10000}
+    # 包含首次立即上报在内，最多上报5次。
+    max-attempts: ${AGENT_TASK_RESULT_MAX_ATTEMPTS:5}
+
   # Redis
   redis:
     host: ${REDIS_HOST:127.0.0.1}
@@ -44,8 +53,8 @@ agent:
     # 预检查使用的数据目录，须事先存在。
     # Redis实际数据位置仍由redis.conf中的dir等参数决定，两者须保持一致。
     data-dir: ${REDIS_DATA_DIR:/opt/redis/data}
-    # RESTORE_CONFIG使用的已有备份文件，不由执行器自动生成。
-    backup-file: ${REDIS_BACKUP_FILE:}
+    # 独立备份磁盘上的Redis配置文件；DEPLOY_CONFIG成功时同步更新。
+    backup-file: ${REDIS_BACKUP_FILE:/backup/redis-recovery/redis.conf}
 
     pool:
       max-total: 5
@@ -65,8 +74,8 @@ agent:
     # Sentinel正式配置文件，生产环境可通过环境变量覆盖。
     # 启动脚本也读取SENTINEL_CONFIG_FILE，配置文件须允许Sentinel正常重写。
     config-file: ${SENTINEL_CONFIG_FILE:/opt/redis/conf/sentinel.conf}
-    # RESTORE_CONFIG使用的已有备份文件，不由执行器自动生成。
-    backup-file: ${SENTINEL_BACKUP_FILE:}
+    # 独立备份磁盘上的Sentinel配置文件；DEPLOY_CONFIG成功时同步更新。
+    backup-file: ${SENTINEL_BACKUP_FILE:/backup/redis-recovery/sentinel.conf}
 
   # 运维操作：目录示例仅用于开发，生产路径以银行服务器实际环境为准。
   # 不会在执行器启动或主机预检查时自动创建这些根目录。
@@ -92,6 +101,9 @@ agent:
     stop-check-interval-millis: 1000
     start-check-timeout-seconds: 30
     start-check-interval-millis: 1000
+    # 故障恢复完成后的拓扑验收：最多等待60秒，每5秒采集一次。
+    topology-check-timeout-seconds: ${AGENT_TOPOLOGY_CHECK_TIMEOUT_SECONDS:60}
+    topology-check-interval-millis: ${AGENT_TOPOLOGY_CHECK_INTERVAL_MILLIS:5000}
 
 logging:
   level:

@@ -4,13 +4,13 @@ import com.icbc.nbfh.service.ConfigFileService;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.ParameterErrorCode;
 import com.icbc.nbfh.common.Enum.TaskSubmitStatus;
+import com.icbc.nbfh.common.ResultBean;
 import com.icbc.nbfh.common.exception.ParameterException;
 import com.icbc.nbfh.entity.DTO.PlatformTaskDTO;
 import com.icbc.nbfh.entity.VO.TaskSubmitResultVO;
 import com.icbc.nbfh.service.AgentTaskService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -41,20 +41,20 @@ class AgentTaskControllerTest {
         task.setOperationType(OperationType.START_REDIS.name());
 
         // 2. 提交任务。
-        ResponseEntity<TaskSubmitResultVO> response =
+        ResultBean<TaskSubmitResultVO> response =
                 controller.receiveTask(task);
 
         // 3. 验证任务提交和响应内容。
         verify(agentTaskService).submitTask(task);
 
-        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertEquals("TASK202610160001", response.getBody().getTaskNo());
+        assertEquals(HttpStatus.ACCEPTED.value(), response.getCode());
+        assertNotNull(response.getData());
+        assertEquals("TASK202610160001", response.getData().getTaskNo());
         assertEquals(
                 TaskSubmitStatus.ACCEPTED.name(),
-                response.getBody().getStatus()
+                response.getData().getStatus()
         );
-        assertEquals("任务已接收", response.getBody().getMessage());
+        assertEquals("任务已接收", response.getMsg());
     }
 
     /**

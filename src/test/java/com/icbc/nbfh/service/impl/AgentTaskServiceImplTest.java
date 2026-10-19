@@ -4,12 +4,10 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.TaskResultStatus;
-import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.entity.DTO.PlatformTaskDTO;
 import com.icbc.nbfh.entity.DTO.TaskResultReportDTO;
 import com.icbc.nbfh.service.RegisterService;
-import com.icbc.nbfh.client.PlatformClient;
 import com.icbc.nbfh.service.DeployVersionService;
 import com.icbc.nbfh.service.DeployConfigService;
 import com.icbc.nbfh.service.RestoreConfigService;
@@ -19,12 +17,12 @@ import com.icbc.nbfh.service.StopRedisService;
 import com.icbc.nbfh.service.PrecheckHostService;
 import com.icbc.nbfh.service.SwitchVersionService;
 import com.icbc.nbfh.service.StopSentinelService;
+import com.icbc.nbfh.service.TaskResultReportService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -51,13 +49,10 @@ class AgentTaskServiceImplTest {
                 mock(RestoreConfigService.class);
         DeployVersionService deployVersionService =
                 mock(DeployVersionService.class);
-        PlatformClient platformClient =
-                mock(PlatformClient.class);
+        TaskResultReportService taskResultReportService =
+                mock(TaskResultReportService.class);
         RegisterService registerService =
                 mock(RegisterService.class);
-
-        AgentProperties agentProperties = new AgentProperties();
-        agentProperties.getPlatform().setUrl("http://127.0.0.1:8100");
 
         OperationResultDTO operationResult =
                 OperationResultDTO.success(
@@ -70,8 +65,6 @@ class AgentTaskServiceImplTest {
                 .thenReturn(operationResult);
         when(registerService.getAgentId())
                 .thenReturn("agent-001");
-        when(registerService.getToken())
-                .thenReturn("token-001");
 
         AgentTaskServiceImpl service =
                 new AgentTaskServiceImpl(
@@ -81,12 +74,12 @@ class AgentTaskServiceImplTest {
                         stopSentinelService,
                         startSentinelService,
                         restoreConfigService,
+                        mock(com.icbc.nbfh.service.RecoveryTopologyVerifyService.class),
                         mock(DeployConfigService.class),
                         deployVersionService,
                         mock(SwitchVersionService.class),
-                        platformClient,
-                        registerService,
-                        agentProperties
+                        taskResultReportService,
+                        registerService
                 );
 
         PlatformTaskDTO task = new PlatformTaskDTO();
@@ -101,11 +94,8 @@ class AgentTaskServiceImplTest {
         ArgumentCaptor<TaskResultReportDTO> captor =
                 ArgumentCaptor.forClass(TaskResultReportDTO.class);
 
-        verify(platformClient, timeout(2000)).reportTaskResult(
-                captor.capture(),
-                eq("http://127.0.0.1:8100"),
-                eq("token-001")
-        );
+        verify(taskResultReportService, timeout(2000))
+                .saveAndReport(captor.capture());
 
         TaskResultReportDTO report = captor.getValue();
 
@@ -147,13 +137,10 @@ class AgentTaskServiceImplTest {
                 mock(RestoreConfigService.class);
         DeployVersionService deployVersionService =
                 mock(DeployVersionService.class);
-        PlatformClient platformClient =
-                mock(PlatformClient.class);
+        TaskResultReportService taskResultReportService =
+                mock(TaskResultReportService.class);
         RegisterService registerService =
                 mock(RegisterService.class);
-
-        AgentProperties agentProperties = new AgentProperties();
-        agentProperties.getPlatform().setUrl("http://127.0.0.1:8100");
 
         OperationResultDTO operationResult =
                 OperationResultDTO.success(
@@ -166,8 +153,6 @@ class AgentTaskServiceImplTest {
                 .thenReturn(operationResult);
         when(registerService.getAgentId())
                 .thenReturn("agent-001");
-        when(registerService.getToken())
-                .thenReturn("token-001");
 
         AgentTaskServiceImpl service =
                 new AgentTaskServiceImpl(
@@ -177,12 +162,12 @@ class AgentTaskServiceImplTest {
                         stopSentinelService,
                         startSentinelService,
                         restoreConfigService,
+                        mock(com.icbc.nbfh.service.RecoveryTopologyVerifyService.class),
                         mock(DeployConfigService.class),
                         deployVersionService,
                         mock(SwitchVersionService.class),
-                        platformClient,
-                        registerService,
-                        agentProperties
+                        taskResultReportService,
+                        registerService
                 );
 
         PlatformTaskDTO task = new PlatformTaskDTO();
@@ -199,11 +184,8 @@ class AgentTaskServiceImplTest {
         ArgumentCaptor<TaskResultReportDTO> captor =
                 ArgumentCaptor.forClass(TaskResultReportDTO.class);
 
-        verify(platformClient, timeout(2000)).reportTaskResult(
-                captor.capture(),
-                eq("http://127.0.0.1:8100"),
-                eq("token-001")
-        );
+        verify(taskResultReportService, timeout(2000))
+                .saveAndReport(captor.capture());
 
         TaskResultReportDTO report = captor.getValue();
 
@@ -237,13 +219,10 @@ class AgentTaskServiceImplTest {
                 mock(RestoreConfigService.class);
         DeployVersionService deployVersionService =
                 mock(DeployVersionService.class);
-        PlatformClient platformClient =
-                mock(PlatformClient.class);
+        TaskResultReportService taskResultReportService =
+                mock(TaskResultReportService.class);
         RegisterService registerService =
                 mock(RegisterService.class);
-
-        AgentProperties agentProperties = new AgentProperties();
-        agentProperties.getPlatform().setUrl("http://127.0.0.1:8100");
 
         OperationResultDTO operationResult =
                 OperationResultDTO.success(
@@ -256,8 +235,6 @@ class AgentTaskServiceImplTest {
                 .thenReturn(operationResult);
         when(registerService.getAgentId())
                 .thenReturn("agent-001");
-        when(registerService.getToken())
-                .thenReturn("token-001");
 
         AgentTaskServiceImpl service =
                 new AgentTaskServiceImpl(
@@ -267,12 +244,12 @@ class AgentTaskServiceImplTest {
                         stopSentinelService,
                         startSentinelService,
                         restoreConfigService,
+                        mock(com.icbc.nbfh.service.RecoveryTopologyVerifyService.class),
                         mock(DeployConfigService.class),
                         deployVersionService,
                         mock(SwitchVersionService.class),
-                        platformClient,
-                        registerService,
-                        agentProperties
+                        taskResultReportService,
+                        registerService
                 );
 
         PlatformTaskDTO task = new PlatformTaskDTO();
@@ -289,11 +266,8 @@ class AgentTaskServiceImplTest {
         ArgumentCaptor<TaskResultReportDTO> captor =
                 ArgumentCaptor.forClass(TaskResultReportDTO.class);
 
-        verify(platformClient, timeout(2000)).reportTaskResult(
-                captor.capture(),
-                eq("http://127.0.0.1:8100"),
-                eq("token-001")
-        );
+        verify(taskResultReportService, timeout(2000))
+                .saveAndReport(captor.capture());
 
         TaskResultReportDTO report = captor.getValue();
 
@@ -327,13 +301,10 @@ class AgentTaskServiceImplTest {
                 mock(RestoreConfigService.class);
         DeployVersionService deployVersionService =
                 mock(DeployVersionService.class);
-        PlatformClient platformClient =
-                mock(PlatformClient.class);
+        TaskResultReportService taskResultReportService =
+                mock(TaskResultReportService.class);
         RegisterService registerService =
                 mock(RegisterService.class);
-
-        AgentProperties agentProperties = new AgentProperties();
-        agentProperties.getPlatform().setUrl("http://127.0.0.1:8100");
 
         OperationResultDTO operationResult =
                 OperationResultDTO.success(
@@ -346,8 +317,6 @@ class AgentTaskServiceImplTest {
                 .thenReturn(operationResult);
         when(registerService.getAgentId())
                 .thenReturn("agent-001");
-        when(registerService.getToken())
-                .thenReturn("token-001");
 
         AgentTaskServiceImpl service =
                 new AgentTaskServiceImpl(
@@ -357,12 +326,12 @@ class AgentTaskServiceImplTest {
                         stopSentinelService,
                         startSentinelService,
                         restoreConfigService,
+                        mock(com.icbc.nbfh.service.RecoveryTopologyVerifyService.class),
                         mock(DeployConfigService.class),
                         deployVersionService,
                         mock(SwitchVersionService.class),
-                        platformClient,
-                        registerService,
-                        agentProperties
+                        taskResultReportService,
+                        registerService
                 );
 
         PlatformTaskDTO task = new PlatformTaskDTO();
@@ -379,11 +348,8 @@ class AgentTaskServiceImplTest {
         ArgumentCaptor<TaskResultReportDTO> captor =
                 ArgumentCaptor.forClass(TaskResultReportDTO.class);
 
-        verify(platformClient, timeout(2000)).reportTaskResult(
-                captor.capture(),
-                eq("http://127.0.0.1:8100"),
-                eq("token-001")
-        );
+        verify(taskResultReportService, timeout(2000))
+                .saveAndReport(captor.capture());
 
         TaskResultReportDTO report = captor.getValue();
 

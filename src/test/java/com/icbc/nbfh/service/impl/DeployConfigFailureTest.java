@@ -31,6 +31,8 @@ class DeployConfigFailureTest {
         properties.getOperation().setConfigFileDir(Files.createDirectory(root.resolve("configfiles")).toString());
         properties.getRedis().setConfigFile(root.resolve("redis.conf").toString());
         properties.getSentinel().setConfigFile(root.resolve("sentinel.conf").toString());
+        properties.getRedis().setBackupFile(root.resolve("redis.backup").toString());
+        properties.getSentinel().setBackupFile(root.resolve("sentinel.backup").toString());
         ConfigFileService files = new ConfigFileServiceImpl(properties);
         DeployConfigServiceImpl realService = new DeployConfigServiceImpl(properties, files);
         // 非空目录不能被配置文件原子替换，确定性触发第二份发布失败。

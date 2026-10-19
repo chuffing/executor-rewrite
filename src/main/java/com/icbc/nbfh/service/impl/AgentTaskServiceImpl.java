@@ -4,12 +4,10 @@ import com.alibaba.fastjson.JSON;
 import com.icbc.nbfh.common.Enum.OperationErrorCode;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.TaskResultStatus;
-import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.entity.DTO.PlatformTaskDTO;
 import com.icbc.nbfh.entity.DTO.TaskResultReportDTO;
 import com.icbc.nbfh.service.*;
-import com.icbc.nbfh.client.PlatformClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -46,17 +44,17 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
     private final RestoreConfigService restoreConfigService;
 
+    private final RecoveryTopologyVerifyService recoveryTopologyVerifyService;
+
     private final DeployConfigService deployConfigService;
 
     private final DeployVersionService deployVersionService;
 
     private final SwitchVersionService switchVersionService;
 
-    private final PlatformClient platformClient;
+    private final TaskResultReportService taskResultReportService;
 
     private final RegisterService registerService;
-
-    private final AgentProperties agentProperties;
 
 
     /**
@@ -78,7 +76,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         long startTime = System.currentTimeMillis();
 
         // 运维操作结果。
-        OperationResultDTO result;
+        OperationResultDTO result = null;
 
         try {
             // 获取操作类型。
@@ -108,7 +106,11 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     break;
 
                 case RESTORE_CONFIG:
-                    result = restoreConfigService.restoreConfig(task.getParams());
+                    result = restoreConfigService.restoreConfig();
+                    break;
+
+                case VERIFY_RECOVERY_TOPOLOGY:
+                    result = recoveryTopologyVerifyService.verifyTopology();
                     break;
 
                 case DEPLOY_CONFIG:
@@ -124,9 +126,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     break;
 
                 default:
-                    throw new UnsupportedOperationException(
-                            "暂未实现的操作类型：" + operationType
-                    );
+                    throw new IllegalStateException("未处理的任务类型：" + operationType);
             }
 
         } catch (Exception e) {
@@ -159,9 +159,6 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
         // 1. 获取平台注册信息。
         String agentId = registerService.getAgentId();
-        String token = registerService.getToken();
-        String platformUrl = agentProperties.getPlatform().getUrl();
-
         // 2. 将本地操作结果转换为平台要求的报文。
         TaskResultReportDTO report = new TaskResultReportDTO(
                 task.getTaskNo(),
@@ -174,23 +171,12 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 JSON.toJSONString(result)
         );
 
-        // 3. 调用平台结果上报接口。
+        // 3. 先保存到本地文件，再立即尝试上报平台。
         try {
-            platformClient.reportTaskResult(
-                    report,
-                    platformUrl,
-                    token
-            );
-
-            log.info(
-                    "任务结果上报成功，taskNo={}，stepNo={}",
-                    task.getTaskNo(),
-                    task.getStepNo()
-            );
-
+            taskResultReportService.saveAndReport(report);
         } catch (Exception e) {
             log.error(
-                    "任务结果上报失败，taskNo={}，stepNo={}",
+                    "任务结果保存及上报处理失败，taskNo={}，stepNo={}",
                     task.getTaskNo(),
                     task.getStepNo(),
                     e

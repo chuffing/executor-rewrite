@@ -3,6 +3,7 @@ package com.icbc.nbfh.controller;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.ParameterErrorCode;
 import com.icbc.nbfh.common.Enum.TaskSubmitStatus;
+import com.icbc.nbfh.common.ResultBean;
 import com.icbc.nbfh.common.constant.ConfigFileConstants;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.common.constant.ValidationConstants;
@@ -20,7 +21,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -75,7 +75,8 @@ class DeployConfigControllerTest {
     @Test
     void shouldSubmitInternalPathsAndKeepStagedFiles() throws Exception {
         Map<String, String> original = task.getParams();
-        assertEquals(HttpStatus.ACCEPTED, controller.receiveConfigDeployTask(task, redis, sentinel).getStatusCode());
+        assertEquals(HttpStatus.ACCEPTED.value(),
+                controller.receiveConfigDeployTask(task, redis, sentinel).getCode());
         assertEquals(2, original.size());
         assertEquals(directory.resolve(ConfigFileConstants.REDIS_FILE_NAME).toString(),
                 task.getParams().get(TaskParamConstants.REDIS_CONFIG_LOCAL_PATH));
@@ -160,9 +161,12 @@ class DeployConfigControllerTest {
     @Test
     void shouldCleanWhenQueueIsFull() throws Exception {
         doThrow(new RejectedExecutionException()).when(tasks).submitTask(any());
-        ResponseEntity<TaskSubmitResultVO> response = controller.receiveConfigDeployTask(task, redis, sentinel);
-        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
-        assertEquals(TaskSubmitStatus.BUSY.name(), response.getBody().getStatus());
+        ResultBean<TaskSubmitResultVO> response =
+                controller.receiveConfigDeployTask(task, redis, sentinel);
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE.value(), response.getCode());
+        assertNotNull(response.getData());
+        assertEquals(TaskSubmitStatus.BUSY.name(),
+                response.getData().getStatus());
         verify(files).deleteStagedFiles(directory);
     }
 
