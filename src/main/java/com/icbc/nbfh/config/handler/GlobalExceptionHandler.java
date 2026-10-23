@@ -1,9 +1,9 @@
 package com.icbc.nbfh.config.handler;
 
 import com.icbc.nbfh.common.ResultBean;
-import com.icbc.nbfh.common.Enum.AgentTaskResponseCodeEnum;
 import com.icbc.nbfh.common.exception.ParameterException;
 import com.icbc.nbfh.common.Enum.ParameterErrorCode;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import com.icbc.nbfh.entity.VO.ErrorResultVO;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -28,11 +28,10 @@ public class GlobalExceptionHandler {
                 exception.getErrorMsg()
         );
 
-        return ResultBean.resultBean(
-                result,
-                AgentTaskResponseCodeEnum.PARAMETER_REJECTED.getCode(),
-                result.getMsg()
-        );
+        return new ResultBean<>(
+                HttpStatus.BAD_REQUEST.value(),
+                result.getMsg(),
+                result);
     }
     /**
      * 处理上传文件或整个multipart请求超过大小上限的情况。
@@ -47,10 +46,10 @@ public class GlobalExceptionHandler {
                         "安装包最大50 MiB，上传请求总大小最大51 MiB"
                 );
 
-        return ResultBean.resultBean(
-                result,
-                AgentTaskResponseCodeEnum.PAYLOAD_TOO_LARGE.getCode(),
-                result.getMsg()
+        return new ResultBean<>(
+                HttpStatus.REQUEST_ENTITY_TOO_LARGE.value(),
+                result.getMsg(),
+                result
         );
     }
 }

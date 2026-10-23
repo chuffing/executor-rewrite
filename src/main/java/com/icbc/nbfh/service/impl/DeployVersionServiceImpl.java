@@ -39,25 +39,24 @@ public class DeployVersionServiceImpl implements DeployVersionService {
     @Override
     public OperationResultDTO deployVersion(Map<String, String> params) {
 
-        // 记录当前任务开始执行的时间。
         long startTime = System.currentTimeMillis();
 
-            // 声明源码包路径。
+        // 声明源码包路径。
         Path packagePath = null;
 
         try {
 
-            // 从入参中读取源码包本地路径。
+            // 获取执行器暂存源码包绝对路径。
             packagePath = Paths.get(params.get(TaskParamConstants.PACKAGE_LOCAL_PATH))
                     .toAbsolutePath()
                     .normalize();
 
             // ======== 1. 读取参数与配置 ========
 
-            // 获取准备部署的Redis版本。
+            // 获取准备部署的Redis版本号。
             String targetVersion = params.get(TaskParamConstants.TARGET_VERSION);
 
-            // 获取平台提供的SHA256。后续与执行器本地源码包的SHA256比较。
+            // 获取平台提供的SHA256。后续与存入执行器本地源码包的SHA256比较。
             String expectedSha256 = params.get(TaskParamConstants.PACKAGE_SHA256);
 
             // 获取Redis各版本的正式安装目录。
@@ -100,33 +99,52 @@ public class DeployVersionServiceImpl implements DeployVersionService {
 
             // 检查Shell是否执行超时。
             if (commandResult.isTimedOut()) {
-                return OperationResultDTO.failure(OperationErrorCode.COMMAND_TIMEOUT,
-                        "Redis源码编译及版本部署超时", startTime, System.currentTimeMillis());
+                return OperationResultDTO.failure(
+                        OperationErrorCode.COMMAND_TIMEOUT,
+                        "Redis源码编译及版本部署超时",
+                        startTime,
+                        System.currentTimeMillis());
             }
             // 检查Shell退出码是否为0。
             if (commandResult.getExitCode() != 0) {
-                return OperationResultDTO.failure(OperationErrorCode.COMMAND_EXECUTION_FAILED,
-                        "Redis源码编译及版本部署失败", startTime, System.currentTimeMillis());
+                return OperationResultDTO.failure(
+                        OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                        "Redis源码编译及版本部署失败",
+                        startTime,
+                        System.currentTimeMillis());
             }
-            return OperationResultDTO.success("Redis源码编译及版本部署完成",
-                    startTime, System.currentTimeMillis());
+            return OperationResultDTO.success(
+                    "Redis源码编译及版本部署完成",
+                    startTime,
+                    System.currentTimeMillis());
 
         } catch (FileNotFoundException e) {
-            return OperationResultDTO.failure(OperationErrorCode.COMMAND_NOT_FOUND,
-                    "Redis版本部署脚本不存在", startTime, System.currentTimeMillis());
+            return OperationResultDTO.failure(
+                    OperationErrorCode.COMMAND_NOT_FOUND,
+                    "Redis版本部署脚本不存在",
+                    startTime,
+                    System.currentTimeMillis());
 
         } catch (InvalidPathException e) {
-            return OperationResultDTO.failure(OperationErrorCode.CONFIG_INVALID,
-                    "Redis部署相关路径格式不正确", startTime, System.currentTimeMillis());
+            return OperationResultDTO.failure(
+                    OperationErrorCode.CONFIG_INVALID,
+                    "Redis部署相关路径格式不正确",
+                    startTime,
+                    System.currentTimeMillis());
 
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return OperationResultDTO.failure(OperationErrorCode.UNKNOWN_ERROR,
-                    "Redis版本部署被中断", startTime, System.currentTimeMillis());
+            return OperationResultDTO.failure(
+                    OperationErrorCode.UNKNOWN_ERROR,
+                    "Redis版本部署被中断",
+                    startTime,
+                    System.currentTimeMillis());
 
         } catch (IOException e) {
-            return OperationResultDTO.failure(OperationErrorCode.COMMAND_EXECUTION_FAILED,
-                    "Redis目录检查、源码包读取、编译或部署失败", startTime, System.currentTimeMillis());
+            return OperationResultDTO.failure(
+                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    "Redis目录检查、源码包读取、编译或部署失败",
+                    startTime,
+                    System.currentTimeMillis());
 
         } finally {
             // 清理只交给包服务，路径检查和删除规则只有一份。

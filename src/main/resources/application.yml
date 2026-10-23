@@ -56,8 +56,8 @@ agent:
     # 预检查使用的数据目录，须事先存在。
     # Redis实际数据位置仍由redis.conf中的dir等参数决定，两者须保持一致。
     data-dir: ${REDIS_DATA_DIR:/opt/redis/data}
-    # 独立备份磁盘上的Redis配置文件；DEPLOY_CONFIG成功时同步更新。
-    backup-file: ${REDIS_BACKUP_FILE:/backup/redis-recovery/redis.conf}
+    # Redis可信备份配置；DEPLOY_CONFIG成功时同步更新。
+    backup-file: ${REDIS_BACKUP_FILE:/opt/redis/backup/redis.conf}
 
     pool:
       max-total: 5
@@ -77,8 +77,8 @@ agent:
     # Sentinel正式配置文件，生产环境可通过环境变量覆盖。
     # 启动脚本也读取SENTINEL_CONFIG_FILE，配置文件须允许Sentinel正常重写。
     config-file: ${SENTINEL_CONFIG_FILE:/opt/redis/conf/sentinel.conf}
-    # 独立备份磁盘上的Sentinel配置文件；DEPLOY_CONFIG成功时同步更新。
-    backup-file: ${SENTINEL_BACKUP_FILE:/backup/redis-recovery/sentinel.conf}
+    # Sentinel可信备份配置；DEPLOY_CONFIG成功时同步更新。
+    backup-file: ${SENTINEL_BACKUP_FILE:/opt/redis/backup/sentinel.conf}
 
   # 运维操作：目录示例仅用于开发，生产路径以银行服务器实际环境为准。
   # 不会在执行器启动或主机预检查时自动创建这些根目录。
@@ -94,7 +94,8 @@ agent:
     # 当前版本软链接路径，不是真实目录；SWITCH_VERSION负责首次创建或切换。
     current-dir: ${AGENT_CURRENT_DIR:/opt/redis/current}
 
-    # 主机预检查的最低磁盘可用空间，单位字节，默认2 GiB。
+    # 版本部署开始前，版本安装目录所在文件系统要求的最低可用空间，默认2 GiB。
+    # 该值是部署前安全门槛，不代表对后续磁盘空间的绝对保证。
     min-free-space-bytes: ${AGENT_MIN_FREE_SPACE_BYTES:2147483648}
 
     # Shell脚本总超时，单位秒；可由外部配置覆盖，当前默认10秒。

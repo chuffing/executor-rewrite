@@ -1,6 +1,5 @@
 package com.icbc.nbfh.controller;
 
-import com.icbc.nbfh.common.Enum.AgentTaskResponseCodeEnum;
 import com.icbc.nbfh.common.Enum.OperationErrorCode;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.ParameterErrorCode;
@@ -17,6 +16,7 @@ import com.icbc.nbfh.service.AgentTaskService;
 import com.icbc.nbfh.service.ConfigFileService;
 import com.icbc.nbfh.service.VersionPackageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -55,10 +55,8 @@ public class AgentTaskController {
     public ResultBean<TaskSubmitResultVO> receiveTask(
             @RequestBody PlatformTaskDTO request) {
 
-        // 1. 校验任务参数。
         OperationType operationType = validateTask(request);
 
-        // 2. 上传版本部署任务不能使用该接口。
         if (OperationType.DEPLOY_VERSION == operationType) {
             throw new ParameterException(
                     ParameterErrorCode.TASK_PARAM_INVALID,
@@ -71,36 +69,19 @@ public class AgentTaskController {
                     "配置部署任务必须通过配置文件上传接口提交");
         }
 
-        // 3. 提交任务，等待队列已满时返回繁忙。
-        try {
-            agentTaskService.submitTask(request);
+        // 接收平台任务并提交到执行线程。
+        agentTaskService.submitTask(request);
 
-        } catch (RejectedExecutionException e) {
-            TaskSubmitResultVO result = new TaskSubmitResultVO(
-                    request.getTaskNo(),
-                    TaskSubmitStatus.BUSY.name(),
-                    "执行器繁忙，任务未接收"
-            );
-
-            return ResultBean.resultBean(
-                    result,
-                    AgentTaskResponseCodeEnum.AGENT_BUSY.getCode(),
-                    result.getMessage()
-            );
-        }
-
-
+        // 创建任务接收响应体。
         TaskSubmitResultVO result = new TaskSubmitResultVO(
                 request.getTaskNo(),
-                TaskSubmitStatus.ACCEPTED.name(),
                 "任务已接收"
         );
 
-        return ResultBean.resultBean(
-                result,
-                AgentTaskResponseCodeEnum.ACCEPTED.getCode(),
-                result.getMessage()
-        );
+        return new ResultBean<>(
+                HttpStatus.ACCEPTED.value(),
+                result.getMessage(),
+                result);
     }
 
     /**
@@ -118,10 +99,8 @@ public class AgentTaskController {
             @RequestPart("task") PlatformTaskDTO request,
             @RequestPart("file") MultipartFile file) throws IOException {
 
-        // 1. 校验任务参数和任务类型。
         OperationType operationType = validateTask(request);
 
-        // 2. 确认任务类型必须是DEPLOY_VERSION
         if (OperationType.DEPLOY_VERSION != operationType) {
             throw new ParameterException(
                     ParameterErrorCode.TASK_TYPE_UNSUPPORTED,
@@ -129,20 +108,21 @@ public class AgentTaskController {
             );
         }
 
-        // 3. 校验上传源码包的基础信息。
+        // 校验平台传入的Redis源码包基础信息。
         validateVersionPackage(file, request.getParams().get(TaskParamConstants.TARGET_VERSION));
 
-        // 4. 创建一个新的hashMap，后面需要增加packageLocalPath。（不改动原先的Params
+        // 创建一个新的hashMap，后面需要增加packageLocalPath。（不改动原先的Params
         Map<String, String> params = new HashMap<>(request.getParams());
         // 将复制后的Map重新设置到任务DTO中。
         request.setParams(params);
 
-        // 5. 调用源码包服务。
-        // 这个方法会：
-        // 1. 创建独立暂存目录；
-        // 2. 保存上传的文件；
-        // 3. 校验SHA256；
-        // 4. 返回源码包本地路径。
+        /*
+         * 调用源码包服务，这个方法会：
+         * 1. 创建独立暂存目录
+         * 2. 保存上传的文件
+         * 3. 校验SHA256
+         * 4. 返回源码包本地路径
+         */
         Path packagePath = versionPackageService.saveAndValidate(
                 request.getTaskNo(),
                 params.get(TaskParamConstants.PACKAGE_SHA256),
@@ -155,26 +135,9 @@ public class AgentTaskController {
                 packagePath.toString()
         );
 
-        // 7. 提交部署任务。
+
         try {
-
-            // 把任务交给后台异步执行。
             agentTaskService.submitTask(request);
-        } catch (RejectedExecutionException e) {
-            // 部署任务未接收，清理本次已保存的源码包。
-            versionPackageService.deleteStagedPackage(packagePath);
-
-            TaskSubmitResultVO result = new TaskSubmitResultVO(
-                    request.getTaskNo(),
-                    TaskSubmitStatus.BUSY.name(),
-                    "执行器繁忙，任务未接收"
-            );
-
-            return ResultBean.resultBean(
-                    result,
-                    AgentTaskResponseCodeEnum.AGENT_BUSY.getCode(),
-                    result.getMessage()
-            );
         } catch (RuntimeException e) {
             versionPackageService.deleteStagedPackage(packagePath);
             throw e;
@@ -182,15 +145,13 @@ public class AgentTaskController {
 
         TaskSubmitResultVO result = new TaskSubmitResultVO(
                 request.getTaskNo(),
-                TaskSubmitStatus.ACCEPTED.name(),
                 "任务已接收"
         );
 
-        return ResultBean.resultBean(
-                result,
-                AgentTaskResponseCodeEnum.ACCEPTED.getCode(),
-                result.getMessage()
-        );
+        return new ResultBean<>(
+                HttpStatus.ACCEPTED.value(),
+                result.getMessage(),
+                result);
     }
 
     /**
@@ -203,8 +164,8 @@ public class AgentTaskController {
             @RequestPart("redisFile") MultipartFile redisFile,
             @RequestPart("sentinelFile") MultipartFile sentinelFile) throws IOException {
 
-        // 校验任务参数和类型。
         OperationType operationType = validateTask(request);
+
         if (OperationType.DEPLOY_CONFIG != operationType) {
             throw new ParameterException(ParameterErrorCode.TASK_TYPE_UNSUPPORTED,
                     "配置上传接口只接收配置部署任务");
@@ -239,17 +200,6 @@ public class AgentTaskController {
 
         try {
             agentTaskService.submitTask(request);
-
-        } catch (RejectedExecutionException e) {
-            configFileService.deleteStagedFiles(directory);
-            TaskSubmitResultVO result = new TaskSubmitResultVO(request.getTaskNo(),
-                    TaskSubmitStatus.BUSY.name(), "执行器繁忙，任务未接收");
-            return ResultBean.resultBean(
-                    result,
-                    AgentTaskResponseCodeEnum.AGENT_BUSY.getCode(),
-                    result.getMessage()
-            );
-
         } catch (RuntimeException e) {
             configFileService.deleteStagedFiles(directory);
             throw e;
@@ -257,14 +207,10 @@ public class AgentTaskController {
 
         TaskSubmitResultVO result = new TaskSubmitResultVO(
                 request.getTaskNo(),
-                TaskSubmitStatus.ACCEPTED.name(),
-                "任务已接收");
-
-        return ResultBean.resultBean(
-                result,
-                AgentTaskResponseCodeEnum.ACCEPTED.getCode(),
-                result.getMessage()
+                "任务已接收"
         );
+
+        return new ResultBean<>(HttpStatus.ACCEPTED.value(), result.getMessage(), result);
     }
 
 
@@ -325,20 +271,12 @@ public class AgentTaskController {
         // 4. 校验不同操作需要的参数。
         switch (operationType) {
             case PRECHECK_HOST:
-                // 预检查只使用本机配置，禁止由任务报文指定路径或端口。
-                if (request.getParams() != null && !request.getParams().isEmpty()) {
-                    throw new ParameterException(
-                            ParameterErrorCode.TASK_PARAM_INVALID,
-                            "主机预检查不接收任务参数"
-                    );
-                }
-                break;
-
             case START_REDIS:
             case STOP_REDIS:
             case START_SENTINEL:
             case STOP_SENTINEL:
-                // 以上操作只使用执行器本机配置，不接收任务参数。
+            case VERIFY_TOPOLOGY:
+                // 以上操作不接收任务参数。
                 if (request.getParams() != null && !request.getParams().isEmpty()) {
                     throw new ParameterException(
                             ParameterErrorCode.TASK_PARAM_INVALID,
@@ -347,26 +285,18 @@ public class AgentTaskController {
                 }
                 break;
 
-            case VERIFY_TOPOLOGY:
-                validateVerifyTopologyParams(request.getParams());
-                break;
-
             case RESTORE_CONFIG:
                 validateRestoreConfigParams(request.getParams());
                 break;
-
             case DEPLOY_CONFIG:
                 validateDeployConfigParams(request.getParams());
                 break;
-
             case DEPLOY_VERSION:
                 validateDeployVersionParams(request.getParams());
                 break;
-
             case SWITCH_VERSION:
                 validateSwitchVersionParams(request.getParams());
                 break;
-
             default:
                 break;
         }
@@ -374,59 +304,6 @@ public class AgentTaskController {
         return operationType;
     }
 
-    /**
-     * 拓扑验收，传入指定期望的主节点和本机角色。
-     */
-    private void validateVerifyTopologyParams(Map<String, String> params) {
-        if (params == null || params.isEmpty()) {
-            return;
-        }
-
-        String masterHostIp = params.get(
-                TaskParamConstants.EXPECTED_MASTER_HOST_IP
-        );
-        String expectedRole = params.get(TaskParamConstants.EXPECTED_ROLE);
-        if (!isIpv4(masterHostIp)) {
-            throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
-                    "拓扑验收期望的主节点IP格式不正确"
-            );
-        }
-        if (!"MASTER".equalsIgnoreCase(expectedRole)
-                && !"REPLICA".equalsIgnoreCase(expectedRole)) {
-            throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
-                    "拓扑验收期望的本机角色不正确"
-            );
-        }
-        if (params.size() != 2) {
-            throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
-                    "拓扑验收只允许期望主节点IP和本机角色参数"
-            );
-        }
-    }
-
-    private boolean isIpv4(String hostIp) {
-        if (hostIp == null) {
-            return false;
-        }
-        String[] values = hostIp.split("\\.", -1);
-        if (values.length != 4) {
-            return false;
-        }
-        for (String value : values) {
-            try {
-                if (value.isEmpty() || Integer.parseInt(value) > 255
-                        || Integer.parseInt(value) < 0) {
-                    return false;
-                }
-            } catch (NumberFormatException exception) {
-                return false;
-            }
-        }
-        return true;
-    }
 
     /**
      * 校验恢复配置操作需要的两份备份文件SHA256。
@@ -651,6 +528,7 @@ public class AgentTaskController {
                     "Redis源码包文件名不能包含首尾空格"
             );
         }
+
         if (originalFileName.length()
                 > ValidationConstants.MAX_PACKAGE_FILE_NAME_LENGTH) {
             throw new ParameterException(
@@ -658,18 +536,21 @@ public class AgentTaskController {
                     "Redis源码包文件名过长"
             );
         }
+
         if (originalFileName.contains("/") || originalFileName.contains("\\")) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,
                     "Redis源码包文件名不能包含路径"
             );
         }
+
         if (originalFileName.contains("..")) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,
                     "Redis源码包文件名不能包含父目录标记"
             );
         }
+
         String expectedFileName = VersionPackageConstants.SOURCE_PACKAGE_PREFIX
                 + targetVersion + VersionPackageConstants.SOURCE_PACKAGE_SUFFIX;
         if (!expectedFileName.equals(originalFileName)) {

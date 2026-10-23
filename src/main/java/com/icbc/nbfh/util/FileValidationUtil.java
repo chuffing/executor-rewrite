@@ -57,8 +57,10 @@ public final class FileValidationUtil {
     public static long getUsableSpace(Path directory) throws IOException {
 
         FileStore store = Files.getFileStore(directory);
+
         if (store.isReadOnly()) {
             throw new IOException("目录所在文件系统为只读：" + directory);
+
         }
         return store.getUsableSpace();
     }
@@ -68,20 +70,25 @@ public final class FileValidationUtil {
      */
     public static Path checkDirectory(String value, String name, boolean writable) throws IOException {
 
+        // 检查配置文件中是否配置了该目录。
         if (!StringUtils.hasText(value)) {
             throw new IllegalArgumentException(name + "未配置");
         }
+
         Path path = Paths.get(value);
         if (!path.isAbsolute()) {
             throw new IllegalArgumentException(name + "必须使用绝对路径");
         }
+
         path = path.normalize();
         if (!Files.isDirectory(path) || !Files.isReadable(path) || !Files.isExecutable(path)) {
             throw new IllegalArgumentException(name + "不存在或缺少读取、访问权限");
         }
+
         if (writable && !Files.isWritable(path)) {
             throw new IllegalArgumentException(name + "不可写");
         }
+
         return path.toRealPath();
     }
 

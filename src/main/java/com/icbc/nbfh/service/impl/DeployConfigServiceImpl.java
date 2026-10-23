@@ -80,7 +80,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
                     agentProperties.getSentinel().getConfigFile(),
                     "Sentinel正式配置文件");
 
-            // 备份文件路径指向单独挂载的备份磁盘。
+            // 备份文件路径来自本地application.yml。
             Path redisBackup = resolveConfiguredPath(
                     agentProperties.getRedis().getBackupFile(),
                     "Redis备份配置文件");
@@ -116,7 +116,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
             // 原样复制Sentinel配置。
             copyStagedFile(sentinelStaged, sentinelTemporary);
 
-            // 在备份磁盘中创建临时文件，确保后续原子替换不会跨文件系统。
+            // 在备份目录中创建临时文件，确保后续能够原子替换。
             redisBackupTemporary = createTemporaryConfig(redisBackup);
             copyStagedFile(redisStaged, redisBackupTemporary);
 
@@ -181,7 +181,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
 
             formalConfigDeployed = true;
 
-            // ======== 5. 更新独立磁盘上的故障恢复备份 ========
+            // ======== 5. 更新故障恢复备份 ========
             Files.move(
                     redisBackupTemporary,
                     redisBackup,
@@ -212,7 +212,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_EXECUTION_FAILED,
                     formalConfigDeployed
-                            ? "正式配置已部署，但备份磁盘不支持原子替换"
+                            ? "正式配置已部署，但备份目录不支持原子替换"
                             : "文件系统不支持配置文件原子替换",
                     startTime,
                     System.currentTimeMillis());
@@ -233,7 +233,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_EXECUTION_FAILED,
                     formalConfigDeployed
-                            ? "正式配置已部署，但备份配置更新失败，请检查备份磁盘后重新部署"
+                            ? "正式配置已部署，但备份配置更新失败，请检查备份目录后重新部署"
                             : "配置文件部署失败，可能已有部分配置更新，请检查后重新部署",
                     startTime,
                     System.currentTimeMillis());

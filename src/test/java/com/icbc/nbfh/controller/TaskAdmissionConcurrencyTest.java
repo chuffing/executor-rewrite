@@ -84,7 +84,8 @@ class TaskAdmissionConcurrencyTest {
                 mock(StopSentinelService.class), mock(StartSentinelService.class),
                 mock(RestoreConfigService.class), mock(com.icbc.nbfh.service.TopologyVerifyService.class),
                 mock(DeployConfigService.class), deploying, mock(SwitchVersionService.class),
-                resultReports, registration);
+                resultReports, registration,
+                mock(com.icbc.nbfh.service.impl.RedisReadyConfigUpdater.class));
         worker = (ThreadPoolExecutor) ReflectionTestUtils.getField(tasks, "executor");
         AgentTaskController controller = new AgentTaskController(tasks, new VersionPackageServiceImpl(properties), mock(ConfigFileService.class));
         mvc = MockMvcBuilders.standaloneSetup(controller)

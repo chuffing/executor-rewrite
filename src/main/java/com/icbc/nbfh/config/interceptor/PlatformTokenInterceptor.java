@@ -1,12 +1,10 @@
 package com.icbc.nbfh.config.interceptor;
 
-import cn.hutool.http.HttpStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.icbc.nbfh.common.Enum.AgentTaskResponseCodeEnum;
 import com.icbc.nbfh.common.ResultBean;
-import com.icbc.nbfh.entity.VO.ErrorResultVO;
 import com.icbc.nbfh.service.RegisterService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -44,27 +42,18 @@ public class PlatformTokenInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        response.setStatus(HttpStatus.HTTP_UNAUTHORIZED);
+        // 身份校验失败，直接返回401，不再进入Controller。
+        response.setStatus(HttpStatus.UNAUTHORIZED.value());
         response.setCharacterEncoding("UTF-8");
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 
-        ErrorResultVO result = new ErrorResultVO(
-                String.valueOf(
-                        AgentTaskResponseCodeEnum.AUTHENTICATION_REJECTED
-                                .getCode()
-                ),
-                "身份校验失败",
-                "平台令牌无效"
+        ResultBean<Void> result = new ResultBean<>(
+                HttpStatus.UNAUTHORIZED.value(),
+                "平台令牌无效",
+                null
         );
-        objectMapper.writeValue(
-                response.getWriter(),
-                ResultBean.resultBean(
-                        result,
-                        AgentTaskResponseCodeEnum.AUTHENTICATION_REJECTED
-                                .getCode(),
-                        result.getMsg()
-                )
-        );
+
+        objectMapper.writeValue(response.getWriter(), result);
         return false;
     }
 }

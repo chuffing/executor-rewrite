@@ -32,13 +32,12 @@ public class SwitchVersionServiceImpl implements SwitchVersionService {
     @Override
     public OperationResultDTO switchVersion(Map<String, String> params) {
 
-        // 记录开始时间。
         long startTime = System.currentTimeMillis();
 
         // 从任务参数中读取已校验的目标版本号。
         String targetVersion = params.get(TaskParamConstants.TARGET_VERSION);
 
-        // 从本地配置中获取Redis版本安装目录和current软连接路径。
+        // 从本地配置中获取Redis版本安装目录和current软链接路径。
         String installDir = agentProperties.getOperation().getInstallDir();
         String currentDir = agentProperties.getOperation().getCurrentDir();
 

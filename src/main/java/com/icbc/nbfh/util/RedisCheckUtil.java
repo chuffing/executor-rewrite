@@ -55,8 +55,7 @@ public final class RedisCheckUtil {
                 port,
                 password,
                 timeout,
-                "standalone",
-                "cluster"
+                "standalone"
         );
     }
 
@@ -161,12 +160,14 @@ public final class RedisCheckUtil {
         if (timeout <= 0) {
             throw new IllegalArgumentException("Redis或Sentinel连接超时必须大于0");
         }
+
+        // 确保Agent只检查自己所在的Linux服务器。
         InetAddress address = InetAddress.getByName(host);
         if (!address.isLoopbackAddress() && NetworkInterface.getByInetAddress(address) == null) {
             throw new IllegalArgumentException("主机预检查只允许探测本机地址");
         }
+
         try (Socket socket = new Socket()) {
-            // 复用已有Redis或Sentinel连接超时配置，不增加单独的探测配置。
             socket.connect(new InetSocketAddress(address, port), timeout);
             return true;
         } catch (ConnectException e) {

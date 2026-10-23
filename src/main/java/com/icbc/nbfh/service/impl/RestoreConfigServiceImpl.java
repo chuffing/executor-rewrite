@@ -32,10 +32,9 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
     @Override
     public OperationResultDTO restoreConfig(Map<String, String> params) {
 
-        // 获取开始时间。
         long startTime = System.currentTimeMillis();
 
-        // 1. 读取平台提供的两份备份配置SHA256。
+        // 获取并校验平台下发的配置文件SHA256。
         String redisConfigSha256 = getConfigSha256(
                 params,
                 TaskParamConstants.REDIS_CONFIG_SHA256
@@ -55,15 +54,13 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
             );
         }
 
-        // 2. 读取本地配置文件路径。
+        // 读取本地配置文件路径。
         String redisBackupFile = agentProperties.getRedis().getBackupFile();
         String redisConfigFile = agentProperties.getRedis().getConfigFile();
-        String sentinelBackupFile =
-                agentProperties.getSentinel().getBackupFile();
-        String sentinelConfigFile =
-                agentProperties.getSentinel().getConfigFile();
+        String sentinelBackupFile = agentProperties.getSentinel().getBackupFile();
+        String sentinelConfigFile = agentProperties.getSentinel().getConfigFile();
 
-        // 3. 检查执行器本地配置是否完整。
+        // 检查执行器本地配置是否完整。
         if (!StringUtils.hasText(redisBackupFile)
                 || !StringUtils.hasText(redisConfigFile)
                 || !StringUtils.hasText(sentinelBackupFile)
@@ -81,10 +78,9 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
         Path sentinelBackupPath = Paths.get(sentinelBackupFile.trim());
         Path sentinelConfigPath = Paths.get(sentinelConfigFile.trim());
 
-        // 4. 检查两份备份文件是否存在并且可读。
+        // 检查两份备份文件是否存在并且可读。
         if (!FileValidationUtil.isReadableFile(redisBackupPath)
-                || !FileValidationUtil.isReadableFile(
-                sentinelBackupPath)) {
+                || !FileValidationUtil.isReadableFile(sentinelBackupPath)) {
             return OperationResultDTO.failure(
                     OperationErrorCode.PRECONDITION_FAILED,
                     "Redis或Sentinel备份配置文件不存在或不可读",
@@ -93,10 +89,9 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
             );
         }
 
-        // 5. 检查目标配置文件所在目录是否可写。
+        // 检查目标配置文件所在目录是否可写。
         if (!FileValidationUtil.isWritableTarget(redisConfigPath)
-                || !FileValidationUtil.isWritableTarget(
-                sentinelConfigPath)) {
+                || !FileValidationUtil.isWritableTarget(sentinelConfigPath)) {
             return OperationResultDTO.failure(
                     OperationErrorCode.CONFIG_INVALID,
                     "Redis或Sentinel目标配置目录不可写",
@@ -106,12 +101,11 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
         }
 
         try {
-            // 6. 校验本地备份与平台保存的SHA256是否一致。
+            // 校验本地备份与平台保存的SHA256是否一致。
             if (!redisConfigSha256.equalsIgnoreCase(
                     FileChecksumUtil.calculateSha256(redisBackupPath))
                     || !sentinelConfigSha256.equalsIgnoreCase(
-                    FileChecksumUtil.calculateSha256(
-                            sentinelBackupPath))) {
+                    FileChecksumUtil.calculateSha256(sentinelBackupPath))) {
                 return OperationResultDTO.failure(
                         OperationErrorCode.CHECKSUM_MISMATCH,
                         "Redis或Sentinel备份配置文件SHA256不一致",
@@ -120,7 +114,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
                 );
             }
 
-            // 7. 备份校验通过后，覆盖两份正式配置文件。
+            // 备份校验通过后，覆盖两份正式配置文件。
             Files.copy(
                     redisBackupPath,
                     redisConfigPath,
@@ -170,6 +164,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
                 .matches()) {
             return null;
         }
+
         return sha256;
     }
 

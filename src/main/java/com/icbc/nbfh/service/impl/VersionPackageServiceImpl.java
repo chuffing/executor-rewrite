@@ -144,28 +144,27 @@ public class VersionPackageServiceImpl implements VersionPackageService {
     public void deleteStagedPackage(Path packagePath) {
 
         Path requestDirectory = packagePath.toAbsolutePath().normalize().getParent();
+
         try {
             // 清理只允许发生在配置的暂存目录下，不接受任意服务器路径。
             Path stagingDirectory = Paths.get(
                     agentProperties.getOperation().getPackageDir().trim())
-                    .toRealPath().resolve(
-                            VersionPackageConstants.STAGING_DIRECTORY_NAME);
+                    .toRealPath().resolve(VersionPackageConstants.STAGING_DIRECTORY_NAME);
             if (requestDirectory == null) {
                 throw new IOException("缺少源码包暂存目录");
             }
             if (!stagingDirectory.equals(requestDirectory.getParent())) {
                 throw new IOException("源码包清理路径不在暂存目录内");
             }
+
         } catch (IOException | RuntimeException e) {
             log.warn("Redis源码包清理路径检查失败，path={}", packagePath, e);
             return;
         }
 
         // 分别尝试删除，单个文件删除失败不影响另一个文件的清理。
-        deleteIfExists(requestDirectory.resolve(
-                VersionPackageConstants.TEMP_PACKAGE_FILE_NAME));
-        deleteIfExists(requestDirectory.resolve(
-                VersionPackageConstants.STAGED_PACKAGE_FILE_NAME));
+        deleteIfExists(requestDirectory.resolve(VersionPackageConstants.TEMP_PACKAGE_FILE_NAME));
+        deleteIfExists(requestDirectory.resolve(VersionPackageConstants.STAGED_PACKAGE_FILE_NAME));
         deleteIfExists(requestDirectory);
     }
 

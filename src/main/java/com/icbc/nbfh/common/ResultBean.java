@@ -49,6 +49,12 @@ public class ResultBean<T> implements Serializable {
         this.msg = msg;
     }
 
+    public ResultBean(int code, String msg, T data) {
+        this.code = code;
+        this.msg = msg;
+        this.data = data;
+    }
+
     public ResultBean(Throwable throwable) {
         super();
         this.code = HttpStatus.HTTP_INTERNAL_ERROR;

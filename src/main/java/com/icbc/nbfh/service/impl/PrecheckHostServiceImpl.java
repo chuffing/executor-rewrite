@@ -17,7 +17,6 @@ import org.springframework.util.StringUtils;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.FileStore;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -43,95 +42,73 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
     private final AgentProperties agentProperties;
 
     /**
-     * 只读检查本机目录、磁盘、端口及脚本。
+     * 检查本机是否具备Redis部署所需的基础条件。
+     * 检查本机目录、磁盘、端口及脚本。
      */
     @Override
     public OperationResultDTO precheckHost() {
 
-        // 记录开始时间。
         long startTime = System.currentTimeMillis();
 
         try {
             // 获取执行器的运维配置对象。
             AgentProperties.OperationConfig operation = agentProperties.getOperation();
 
-            // 检查安装包暂存目录。
-            // true表示要求目录可写，因为后续需要保存平台发送的Redis安装包。
+            // 检查安装包暂存目录。true表示要求目录可写。
             Path packages = FileValidationUtil.checkDirectory(
                     operation.getPackageDir(), "安装包暂存目录", true);
 
             // 检查Redis版本安装目录。
-            // true表示要求目录可写。
             Path installed = FileValidationUtil.checkDirectory(
                     operation.getInstallDir(), "版本安装目录", true);
 
             // 检查固定Shell脚本目录。
-            // false表示不要求目录可写，只需要能够读取和访问。
             Path scripts = FileValidationUtil.checkDirectory(
                     operation.getScriptDir(), "脚本目录", false);
 
-            // 检查Redis数据目录。Redis需要能够在该目录中写入数据文件。
+            // 检查Redis数据目录。
             FileValidationUtil.checkDirectory(
                     agentProperties.getRedis().getDataDir(), "Redis数据目录", true);
 
-            // 检查Redis配置文件。
-            // 新服务器允许配置文件尚未创建，但父目录必须满足要求
+            // 检查Redis配置文件。新服务器允许配置文件尚未创建，但父目录必须满足要求。
             checkConfigTarget(agentProperties.getRedis().getConfigFile(), "Redis配置文件");
 
             // 对Sentinel配置文件进行相同检查。
             checkConfigTarget(agentProperties.getSentinel().getConfigFile(), "Sentinel配置文件");
 
-            // 检查独立磁盘上的两份故障恢复备份路径。
+            // 检查两份故障恢复备份路径。
             checkConfigTarget(agentProperties.getRedis().getBackupFile(), "Redis备份配置文件");
             checkConfigTarget(agentProperties.getSentinel().getBackupFile(), "Sentinel备份配置文件");
 
-            // 生产Linux环境要求正式配置与备份位于不同文件系统。
-            checkSeparateBackupFileSystem(
+            // 检查正式配置与备份配置是否位于不同目录。
+            checkSeparateBackupDirectory(
                     agentProperties.getRedis().getConfigFile(),
                     agentProperties.getRedis().getBackupFile(),
                     "Redis"
             );
-            checkSeparateBackupFileSystem(
+            checkSeparateBackupDirectory(
                     agentProperties.getSentinel().getConfigFile(),
                     agentProperties.getSentinel().getBackupFile(),
                     "Sentinel"
             );
 
-
             // 检查current软链接是否合法。
-            // 新服务器允许尚未创建current。
-            // 如果current已经存在，则要求它指向正式版本安装目录中的有效版本目录。
             checkCurrentLink(operation.getCurrentDir(), installed);
 
-            // 从配置读取最低磁盘可用空间要求。
-            long minimum = operation.getMinFreeSpaceBytes();
+            // 获取版本部署开始前要求的最低可用空间。
+            long minimumFreeSpace = operation.getMinFreeSpaceBytes();
 
-            // 获取安装包暂存目录所在文件系统的可用空间。
-            long packageAvailable = FileValidationUtil.getUsableSpace(packages);
+            // 获取版本安装目录所在文件系统的可用空间。
+            long availableSpace = FileValidationUtil.getUsableSpace(installed);
 
-            log.info("主机磁盘检查，directory={}，availableBytes={}，minimumBytes={}",
-                    packages, packageAvailable, minimum);
+            log.info("版本部署磁盘检查，directory={}，availableBytes={}，minimumBytes={}",
+                    installed, availableSpace, minimumFreeSpace);
 
-            // 如果实际空间小于最低要求，则返回失败。
-            if (packageAvailable < minimum) {
+            // 这里只检查部署前最低空间，不保证后续磁盘空间不会发生变化。
+            if (availableSpace < minimumFreeSpace) {
                 return OperationResultDTO.failure(
                         OperationErrorCode.RESOURCE_INSUFFICIENT,
-                        "安装包暂存目录所在磁盘可用空间不足",
-                        startTime,
-                        System.currentTimeMillis());
-            }
-
-            // 获取正式版本安装目录所在文件系统的可用空间。
-            long installAvailable = FileValidationUtil.getUsableSpace(installed);
-
-            log.info("主机磁盘检查，directory={}，availableBytes={}，minimumBytes={}",
-                    installed, installAvailable, minimum);
-
-            // 如果实际空间小于最低要求，则返回失败。
-            if (installAvailable < minimum) {
-                return OperationResultDTO.failure(
-                        OperationErrorCode.RESOURCE_INSUFFICIENT,
-                        "版本安装目录所在磁盘可用空间不足",
+                        "版本安装目录所在文件系统可用空间不足",
                         startTime, System.currentTimeMillis());
             }
 
@@ -145,6 +122,7 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
                         agentProperties.getRedis().getPort(),
                         agentProperties.getRedis().getPassword(),
                         agentProperties.getRedis().getTimeout())) {
+
                     return OperationResultDTO.failure(
                             OperationErrorCode.PORT_OCCUPIED,
                             "Redis目标端口已被其他服务占用",
@@ -199,8 +177,13 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
                 return OperationResultDTO.failure(OperationErrorCode.PRECONDITION_FAILED,
                         "主机运行依赖检查未通过，请查看执行器日志", startTime, System.currentTimeMillis());
             }
-            // 7. 返回预检查结果。
-            return OperationResultDTO.success("主机部署环境预检查通过", startTime, System.currentTimeMillis());
+
+
+            return OperationResultDTO.success(
+                    "主机部署环境预检查通过",
+                    startTime,
+                    System.currentTimeMillis()
+            );
 
         } catch (IllegalArgumentException e) {
             return OperationResultDTO.failure(OperationErrorCode.CONFIG_INVALID,
@@ -267,26 +250,26 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
     }
 
     /**
-     * 检查正式配置与备份配置是否位于不同文件系统。
-     * Windows开发环境没有Linux挂载点语义，因此只在支持POSIX属性时强制检查。
+     * 检查正式配置与备份配置是否位于不同目录。
      */
-    private void checkSeparateBackupFileSystem(
+    private void checkSeparateBackupDirectory(
             String configFile,
             String backupFile,
-            String name) throws IOException {
+            String name) {
 
-        Path configParent = Paths.get(configFile).normalize().getParent();
-        Path backupParent = Paths.get(backupFile).normalize().getParent();
+        Path configDirectory = Paths.get(configFile)
+                .toAbsolutePath()
+                .normalize()
+                .getParent();
 
-        FileStore configStore = Files.getFileStore(configParent);
-        if (!configStore.supportsFileAttributeView("posix")) {
-            return;
-        }
+        Path backupDirectory = Paths.get(backupFile)
+                .toAbsolutePath()
+                .normalize()
+                .getParent();
 
-        FileStore backupStore = Files.getFileStore(backupParent);
-        if (configStore.equals(backupStore)) {
+        if (configDirectory.equals(backupDirectory)) {
             throw new IllegalArgumentException(
-                    name + "正式配置与备份配置必须位于不同挂载磁盘"
+                    name + "正式配置与备份配置不能位于同一目录"
             );
         }
     }
@@ -304,17 +287,14 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
             throw new IllegalArgumentException("current软链接路径未配置");
         }
 
-        // 将软链接路径转换为Path对象。
         Path current = Paths.get(value);
 
-        // 要求使用绝对路径。
         if (!current.isAbsolute()) {
             throw new IllegalArgumentException("current软链接路径必须使用绝对路径");
         }
-        // 规范化路径。
         current = current.normalize();
 
-        // 检查current路径是否具有父目录和文件名。
+        // 软链接必须具有父目录和文件名（根目录无法创建软链接。
         if (current.getParent() == null || current.getFileName() == null) {
             throw new IllegalArgumentException("current软链接路径不合法");
         }
@@ -322,11 +302,12 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
         // 检查current所在的父目录是否存在且可读、可写、可访问。
         FileValidationUtil.checkDirectory(current.getParent().toString(), "current父目录", true);
 
-        // 检查current软链接是否存在。
-        // 新服务器允许还没有创建current，因此不存在时直接结束检查。
+        // 检查current软链接是否存在。（新服务器允许还没有创建current，因此不存在时直接结束检查。
+        // LinkOption.NOFOLLOW_LINKS：如果遇到软链接，不要顺着软链接去检查它指向的目标，只检查软链接本身。
         if (!Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
             return;
         }
+        // 如果current只是个普通文件夹也可以通过上一步的检查。
 
         // 如果current已经存在，要求它必须是符号链接。
         if (!Files.isSymbolicLink(current)) {

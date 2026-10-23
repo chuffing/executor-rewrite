@@ -79,7 +79,8 @@ class AgentTaskServiceImplTest {
                         deployVersionService,
                         mock(SwitchVersionService.class),
                         taskResultReportService,
-                        registerService
+                        registerService,
+                        mock(RedisReadyConfigUpdater.class)
                 );
 
         PlatformTaskDTO task = new PlatformTaskDTO();
@@ -167,7 +168,8 @@ class AgentTaskServiceImplTest {
                         deployVersionService,
                         mock(SwitchVersionService.class),
                         taskResultReportService,
-                        registerService
+                        registerService,
+                        mock(RedisReadyConfigUpdater.class)
                 );
 
         PlatformTaskDTO task = new PlatformTaskDTO();
@@ -249,7 +251,8 @@ class AgentTaskServiceImplTest {
                         deployVersionService,
                         mock(SwitchVersionService.class),
                         taskResultReportService,
-                        registerService
+                        registerService,
+                        mock(RedisReadyConfigUpdater.class)
                 );
 
         PlatformTaskDTO task = new PlatformTaskDTO();
@@ -331,7 +334,8 @@ class AgentTaskServiceImplTest {
                         deployVersionService,
                         mock(SwitchVersionService.class),
                         taskResultReportService,
-                        registerService
+                        registerService,
+                        mock(RedisReadyConfigUpdater.class)
                 );
 
         PlatformTaskDTO task = new PlatformTaskDTO();

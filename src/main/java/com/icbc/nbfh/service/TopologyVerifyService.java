@@ -10,11 +10,6 @@ import java.util.Map;
 public interface TopologyVerifyService {
 
     /**
-     * 在规定时间内等待Redis和Sentinel拓扑恢复正常。
-     */
-    OperationResultDTO verifyTopology();
-
-    /**
      * 验收拓扑，并在提供期望参数时核对主节点和本机角色。
      */
     OperationResultDTO verifyTopology(Map<String, String> params);

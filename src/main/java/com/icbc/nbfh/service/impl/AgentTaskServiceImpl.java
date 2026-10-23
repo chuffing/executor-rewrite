@@ -56,6 +56,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
     private final RegisterService registerService;
 
+    private final RedisReadyConfigUpdater redisReadyConfigUpdater;
+
 
     /**
      * 接收平台任务并提交到执行线程。
@@ -72,19 +74,15 @@ public class AgentTaskServiceImpl implements AgentTaskService {
      */
     private void executeTask(PlatformTaskDTO task) {
 
-        // 获取开始时间。
         long startTime = System.currentTimeMillis();
 
-        // 运维操作结果。
         OperationResultDTO result = null;
 
         try {
-            // 获取操作类型。
             OperationType operationType =
                     OperationType.valueOf(task.getOperationType());
 
             switch (operationType) {
-
                 case PRECHECK_HOST:
                     result = precheckHostService.precheckHost();
                     break;
@@ -114,6 +112,11 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     result = topologyVerifyService.verifyTopology(
                             task.getParams()
                     );
+
+                    // 新服务器拓扑验收成功后，允许执行器采集Redis数据。
+                    if (result.isSuccess()) {
+                        redisReadyConfigUpdater.markReadyIfNecessary();
+                    }
                     break;
 
                 case DEPLOY_CONFIG:
@@ -133,9 +136,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             }
 
         } catch (Exception e) {
-
             log.error("任务执行异常，taskNo={}", task.getTaskNo(), e);
-
             result = OperationResultDTO.failure(
                     OperationErrorCode.UNKNOWN_ERROR,
                     "任务执行异常：" + e.getMessage(),
@@ -177,6 +178,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         // 3. 先保存到本地文件，再立即尝试上报平台。
         try {
             taskResultReportService.saveAndReport(report);
+
         } catch (Exception e) {
             log.error(
                     "任务结果保存及上报处理失败，taskNo={}，stepNo={}",

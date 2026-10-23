@@ -32,7 +32,8 @@ class PrecheckHostTaskTest {
                 mock(StopSentinelService.class), mock(StartSentinelService.class),
                 mock(RestoreConfigService.class), mock(com.icbc.nbfh.service.TopologyVerifyService.class),
                 mock(DeployConfigService.class), mock(DeployVersionService.class), mock(SwitchVersionService.class),
-                resultReports, registration);
+                resultReports, registration,
+                mock(RedisReadyConfigUpdater.class));
         ThreadPoolExecutor worker = (ThreadPoolExecutor) ReflectionTestUtils.getField(tasks, "executor");
         try {
             PlatformTaskDTO task = new PlatformTaskDTO();

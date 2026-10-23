@@ -1,0 +1,360 @@
+# Redis 执行器部署与人工准备说明
+
+本文档只描述部署人员需要提前完成的工作。执行器启动后自动注册、接收任务和上报结果的流程不需要人工干预。
+
+## 一、部署原则
+
+三台服务器可以使用同一个执行器 JAR，但每台服务器必须准备各自的外置 `application.yml`。
+
+以下内容允许每台服务器不同：
+
+- 执行器名称。
+- Redis、Sentinel 的连接地址、端口和密码。
+- Redis、Sentinel 的服务名称。
+- Redis 数据目录、正式配置文件路径和备份文件路径。
+- Redis 版本安装目录和 `current` 软链接路径。
+- `redisReady` 状态。
+
+建议把“同一个 JAR + 本机 application.yml”作为一台服务器的完整执行器部署包，不要为了修改配置重新编译 JAR。
+
+## 二、服务器基础要求
+
+每台执行器服务器需要提前满足以下条件：
+
+- Linux 操作系统。
+- Bash 4 或以上版本。
+- Java 8。
+- 能访问平台服务地址。
+- 平台能够访问执行器监听端口，默认端口为 `9101`。
+- 执行器运行账户对本文列出的工作目录具有相应读写权限。
+- 系统具有 `bash`、`tar`、`gzip`、`awk`、`readlink`、`stat`、`head`、`od`、`chmod`、`cp`、`mv`、`ln`、`mkdir`、`mktemp`、`rm`、`rmdir`、`timeout` 和 `grep` 等命令。
+- 需要在本机编译 Redis 源码时，还必须安装 `make`、`cc` 等编译工具。
+- `tar` 必须是 GNU tar。
+- `redis-cli` 必须存在，并且执行器运行账户可以执行。
+
+## 三、推荐目录结构
+
+以下目录只是推荐值。实际路径可以不同，但必须与本机 `application.yml` 和启动环境变量保持一致。
+
+```text
+/opt/redis/
+├── agent/
+│   ├── redis-monitor-agent.jar
+│   ├── application.yml
+│   ├── agent-token.dat             # 首次注册成功后自动生成
+│   └── task-results/               # 未成功上报的任务结果
+├── scripts/
+│   ├── precheck-host.sh
+│   ├── deploy-version.sh
+│   ├── switch-version.sh
+│   ├── stop-redis.sh
+│   ├── start-redis.sh
+│   ├── stop-sentinel.sh
+│   └── start-sentinel.sh
+├── packages/                       # 平台下发的Redis源码包暂存根目录
+│   └── staging/                    # 执行器按任务自动创建
+├── configfiles/                    # 平台下发的配置文件暂存根目录
+│   └── staging/                    # 执行器按任务自动创建
+├── versions/                       # Redis正式版本安装根目录
+│   └── 7.2.4/
+│       └── bin/
+│           ├── redis-server
+│           ├── redis-cli
+│           └── redis-sentinel -> redis-server
+├── current -> /opt/redis/versions/7.2.4
+├── conf/
+│   ├── redis.conf
+│   └── sentinel.conf
+├── backup/                        # 不提供给Redis和Sentinel直接使用的可信配置副本
+│   ├── redis.conf
+│   └── sentinel.conf
+└── data/
+```
+
+人工需要提前创建的是各个根目录：
+
+```bash
+mkdir -p /opt/redis/agent
+mkdir -p /opt/redis/scripts
+mkdir -p /opt/redis/packages
+mkdir -p /opt/redis/configfiles
+mkdir -p /opt/redis/versions
+mkdir -p /opt/redis/conf
+mkdir -p /opt/redis/backup
+mkdir -p /opt/redis/data
+```
+
+以下目录由执行器按任务自动创建，不需要人工提前创建：
+
+- `/opt/redis/packages/staging/` 下的任务目录。
+- `/opt/redis/configfiles/staging/` 下的任务目录。
+
+`/opt/redis/conf` 保存运行中的正式配置，`/opt/redis/backup` 保存故障恢复使用的可信配置副本，两者不能使用同一目录。
+
+## 四、复制执行器和固定脚本
+
+将构建好的执行器 JAR 放到：
+
+```text
+/opt/redis/agent/redis-monitor-agent.jar
+```
+
+将项目 `scripts` 目录中的七个生产脚本原样复制到：
+
+```text
+/opt/redis/scripts/
+```
+
+建议脚本仅允许执行器运行账户修改和执行：
+
+```bash
+chmod 700 /opt/redis/scripts/*.sh
+```
+
+不要在服务器上临时修改单个脚本。三台服务器应当使用同一版本的脚本，防止相同任务在不同服务器上产生不同结果。
+
+## 五、为每台服务器准备外置 application.yml
+
+不要只使用 JAR 内部的默认配置。每台服务器都应单独准备：
+
+```text
+/opt/redis/agent/application.yml
+```
+
+三台服务器的文件路径可以相同，但文件内容按照本机实际情况分别填写。例如：
+
+```yaml
+server:
+  port: 9101
+
+agent:
+  # 必须指向当前正在使用的外置配置文件。
+  config-file: /opt/redis/agent/application.yml
+
+  # 已有生产Redis时填写true；没有部署Redis的新服务器填写false。
+  redisReady: true
+
+  # 建议每台服务器使用清晰且唯一的名称。
+  agent-name: redis-agent-10.0.0.1
+
+  platform:
+    url: http://10.0.0.100:8100
+    register-code: 请填写平台提供的注册码
+    token-file: /opt/redis/agent/agent-token.dat
+
+  task-result:
+    directory: /opt/redis/agent/task-results
+
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    password: 请填写本机Redis密码
+    db: 0
+    timeout: 2000
+    service-name: 请填写本机Redis服务名称
+    config-file: /opt/redis/conf/redis.conf
+    data-dir: /opt/redis/data
+    backup-file: /opt/redis/backup/redis.conf
+
+  sentinel:
+    host: 127.0.0.1
+    port: 26379
+    password: 请填写本机Sentinel密码
+    timeout: 2000
+    service-name: mymaster
+    config-file: /opt/redis/conf/sentinel.conf
+    backup-file: /opt/redis/backup/sentinel.conf
+
+  operation:
+    script-dir: /opt/redis/scripts
+    package-dir: /opt/redis/packages
+    config-file-dir: /opt/redis/configfiles
+    install-dir: /opt/redis/versions
+    current-dir: /opt/redis/current
+    min-free-space-bytes: 2147483648
+```
+
+注意：`redisReady` 的含义如下。
+
+- `true`：本机已经存在可以连接并采集的 Redis 和 Sentinel。用于首次纳管现有生产服务器。
+- `false`：本机尚未部署 Redis 和 Sentinel。用于以后服务器切换时预先注册新执行器。
+
+新服务器切换完成并且拓扑验收成功后，执行器会自动把外置 `application.yml` 中的 `redisReady` 修改为 `true`，不需要人工再次修改。
+
+因此，`agent.config-file` 必须是可写的外置配置文件绝对路径，并且文件中必须且只能存在一个 `redisReady:` 配置项。
+
+## 六、配置执行器启动环境变量
+
+Java 服务读取 `application.yml`，Shell 启停脚本读取 Java 进程继承到的环境变量。两部分必须保持一致。
+
+至少需要在执行器启动环境中配置：
+
+```bash
+export REDIS_HOST=127.0.0.1
+export REDIS_PORT=6379
+export REDIS_PASSWORD='本机Redis密码'
+export REDIS_CONFIG_FILE=/opt/redis/conf/redis.conf
+
+export SENTINEL_HOST=127.0.0.1
+export SENTINEL_PORT=26379
+export SENTINEL_PASSWORD='本机Sentinel密码'
+export SENTINEL_CONFIG_FILE=/opt/redis/conf/sentinel.conf
+```
+
+如果 `redis-cli` 不在执行器进程的 `PATH` 中，还需要配置：
+
+```bash
+export REDIS_CLI_BIN=/实际路径/redis-cli
+```
+
+如果使用 systemd 管理执行器，应将这些变量写入执行器对应的 systemd unit 或 EnvironmentFile。只在人工登录终端中执行 `export`，不会自动影响 systemd 启动的进程。
+
+## 七、首次纳管现有三台生产服务器
+
+首次纳管的前提是三台 Redis 和三台 Sentinel 已经正常运行。
+
+每台生产服务器需要人工完成：
+
+1. 复制同一个执行器 JAR 和七个固定脚本。
+2. 创建本机所需目录并设置执行器账户权限。
+3. 准备本机独立的外置 `application.yml`。
+4. 将 `redisReady` 设置为 `true`。
+5. 填写本机真实的 Redis、Sentinel 地址、端口、密码和服务名称。
+6. 填写平台地址和平台注册码。
+7. 配置与 YAML 一致的 Shell 环境变量。
+8. 启动执行器，确认执行器注册、心跳和数据采集正常。
+
+平台服务器还需要人工保存三台生产服务器当前使用的配置文件。平台默认目录为：
+
+```text
+./data/nodeConfigs/current/
+├── 10.0.0.1/
+│   ├── redis.conf
+│   └── sentinel.conf
+├── 10.0.0.2/
+│   ├── redis.conf
+│   └── sentinel.conf
+└── 10.0.0.3/
+    ├── redis.conf
+    └── sentinel.conf
+```
+
+平台根目录可通过环境变量 `PLATFORM_NODE_CONFIG_DIR` 修改。这里保存的是平台侧副本，不是执行器服务器上的正式配置文件。
+
+三台执行器都完成注册和数据采集后，前端查询首次纳管候选节点，选择三个服务器 IP 并提交。首次纳管不要求用户指定主节点和从节点顺序。
+
+## 八、服务器切换前准备新服务器
+
+用于服务器切换的新服务器默认没有 Redis 和 Sentinel。
+
+每台新服务器需要人工完成：
+
+1. 复制同一个执行器 JAR 和七个固定脚本。
+2. 创建本机所需目录并设置执行器账户权限。
+3. 准备本机独立的外置 `application.yml`。
+4. 将 `redisReady` 设置为 `false`。
+5. 提前填写未来 Redis 和 Sentinel 将使用的端口、密码、配置路径及服务名称。
+6. 配置平台地址、注册码和本地 Token 保存路径。
+7. 配置 Shell 启停脚本需要的环境变量。
+8. 启动执行器并确认注册、心跳正常。此时没有 Redis，执行器只注册自身，不应采集 Redis 指标。
+
+平台操作人员需要另外完成：
+
+1. 在平台上传并启用目标 Redis 源码安装包。
+2. 在平台的 `staging` 目录中，按照目标服务器 IP 准备六份新配置。
+3. 明确本次切换的主节点 IP；主节点的 `redis.conf` 不配置生效的 `replicaof`。
+4. 两台从节点的 `redis.conf` 必须指向本次选择的主节点。
+5. 三份 `sentinel.conf` 必须使用相同名称监控本次选择的主节点。
+6. 确认三台新执行器均处于在线、未纳管状态后，再从前端提交服务器切换任务。
+
+平台默认的待切换配置目录如下：
+
+```text
+./data/nodeConfigs/staging/
+├── 10.0.1.1/
+│   ├── redis.conf
+│   └── sentinel.conf
+├── 10.0.1.2/
+│   ├── redis.conf
+│   └── sentinel.conf
+└── 10.0.1.3/
+    ├── redis.conf
+    └── sentinel.conf
+```
+
+服务器切换任务创建时，平台计算六份文件的 SHA-256 并保存到任务参数中。配置下发时直接读取 `staging/{IP}`，执行器接收后再次校验 SHA-256。
+
+服务器切换成功后，平台会把三台新服务器的配置更新到 `current/{IP}`。平台不再创建 `tasks/{taskNo}` 配置快照目录。
+
+## 九、正式配置文件和 current 软链接
+
+### 已有生产服务器
+
+首次纳管只要求执行器能够连接现有 Redis 和 Sentinel。正式配置文件应当与外置 YAML 中的路径一致。
+
+首次纳管不会执行 `DEPLOY_CONFIG`，因此需要人工将平台为本机 IP 准备的可信 `redis.conf` 和 `sentinel.conf` 分别复制到：
+
+```text
+/opt/redis/backup/redis.conf
+/opt/redis/backup/sentinel.conf
+```
+
+这两份备份必须与平台 `current/{本机IP}` 目录中的配置内容一致。平台首次纳管时会根据该目录中的配置计算并保存 SHA-256，后续 `RESTORE_CONFIG` 会使用这个摘要校验执行器本地备份。
+
+如果后续需要使用平台执行版本切换，则必须保证：
+
+- `/opt/redis/current` 是软链接，不能是普通目录。
+- 软链接目标位于 `/opt/redis/versions/{version}`。
+- 版本目录中存在可执行的 `bin/redis-server`、`bin/redis-cli`。
+- `bin/redis-sentinel` 是指向 `redis-server` 的有效软链接。
+
+### 新服务器
+
+新服务器允许以下内容暂时不存在：
+
+- `/opt/redis/conf/redis.conf`。
+- `/opt/redis/conf/sentinel.conf`。
+- `/opt/redis/current` 软链接。
+
+但是它们的父目录必须提前存在并且执行器账户可写。服务器切换任务会部署版本、下发配置并创建 `current` 软链接。
+
+## 十、权限和安全要求
+
+- 执行器 JAR、外置配置文件、脚本和工作目录应由同一个受控账户管理。
+- 外置配置文件包含 Redis 和 Sentinel 密码，不应允许其他普通账户读取。
+- `agent-token.dat` 是执行器身份凭证，不得在三台服务器之间复制或共用。
+- 删除本地 Token 文件会触发执行器重新注册，非必要不要删除。
+- Redis 源码包暂存目录和正式版本安装目录不能允许其他普通账户写入。
+- Sentinel 会重写 `sentinel.conf`，因此正式 Sentinel 配置文件必须允许执行器运行账户读写。
+- 正式配置目录和故障恢复备份目录不能使用同一目录。
+
+## 十一、启动前人工检查清单
+
+启动每台执行器前逐项确认：
+
+- [ ] 本机使用的是正确的外置 `application.yml`。
+- [ ] `agent.config-file` 指向该外置配置文件的绝对路径。
+- [ ] `redisReady` 与本机是否已经部署 Redis 的实际情况一致。
+- [ ] `agent-name` 能够区分当前服务器。
+- [ ] 平台地址和注册码正确。
+- [ ] Token 文件路径可写，且没有复制其他服务器的 Token。
+- [ ] Redis、Sentinel 地址、端口、密码和服务名称正确。
+- [ ] Redis、Sentinel 正式配置路径正确。
+- [ ] 七个固定脚本已经复制完成并且可读。
+- [ ] 包暂存目录、配置暂存目录、版本目录、数据目录已经创建。
+- [ ] 正式配置目录和备份目录已经创建且不是同一目录，权限正确。
+- [ ] Shell 环境变量与 YAML 配置一致。
+- [ ] 执行器端口和平台之间的网络访问正常。
+- [ ] 版本安装目录所在文件系统的可用空间不少于配置要求。
+
+## 十二、启动示例
+
+确认环境变量已经配置到当前进程或 systemd 后，可以使用外置配置启动：
+
+```bash
+cd /opt/redis/agent
+java -jar redis-monitor-agent.jar \
+  --spring.config.additional-location=file:/opt/redis/agent/application.yml
+```
+
+生产环境建议使用 systemd 等服务管理方式启动，并明确设置运行账户、环境变量、工作目录和自动重启策略。

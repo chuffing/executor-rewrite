@@ -54,7 +54,7 @@ public class TaskResultReportServiceImpl
 
         Path resultFile = directory.resolve(fileName);
 
-        // 2. 先保存完整任务结果，再向平台上报一次。
+        // 2. 先保存完整任务结果。
         try {
             saveResult(resultFile, report);
 
@@ -85,9 +85,7 @@ public class TaskResultReportServiceImpl
             Path resultFile,
             TaskResultReportDTO report) {
 
-        // 尝试向平台上报一次。
         try {
-
             // 确保执行器已经完成平台注册。
             if (!registerService.registerIfNeeded()) {
                 throw new IllegalStateException("执行器尚未完成平台注册");
@@ -104,8 +102,13 @@ public class TaskResultReportServiceImpl
             try {
                 Files.deleteIfExists(resultFile);
 
-            } catch (IOException e) {
+                log.info(
+                        "任务结果上报成功，taskNo={}，stepNo={}",
+                        report.getTaskNo(),
+                        report.getStepNo()
+                );
 
+            } catch (IOException e) {
                 // 平台已接收结果，删除失败不需要重新执行或上报任务。
                 // 文件保留在本地，由人工确认平台记录后清理。
                 log.error(
@@ -114,12 +117,6 @@ public class TaskResultReportServiceImpl
                         e
                 );
             }
-
-            log.info(
-                    "任务结果上报成功，taskNo={}，stepNo={}",
-                    report.getTaskNo(),
-                    report.getStepNo()
-            );
 
         } catch (Exception e) {
             log.error(

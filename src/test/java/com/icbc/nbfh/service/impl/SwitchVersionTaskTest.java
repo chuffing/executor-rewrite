@@ -32,7 +32,8 @@ class SwitchVersionTaskTest {
                 mock(StopSentinelService.class), mock(StartSentinelService.class),
                 mock(RestoreConfigService.class), mock(com.icbc.nbfh.service.TopologyVerifyService.class),
                 mock(DeployConfigService.class), mock(DeployVersionService.class),
-                switching, resultReports, registration);
+                switching, resultReports, registration,
+                mock(RedisReadyConfigUpdater.class));
         PlatformTaskDTO task = new PlatformTaskDTO();
         task.setTaskNo("TASK202610170001");
         task.setStepNo(2);
