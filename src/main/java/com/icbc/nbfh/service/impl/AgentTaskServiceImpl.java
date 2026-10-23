@@ -44,7 +44,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
     private final RestoreConfigService restoreConfigService;
 
-    private final RecoveryTopologyVerifyService recoveryTopologyVerifyService;
+    private final TopologyVerifyService topologyVerifyService;
 
     private final DeployConfigService deployConfigService;
 
@@ -106,11 +106,14 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     break;
 
                 case RESTORE_CONFIG:
-                    result = restoreConfigService.restoreConfig();
+                    result = restoreConfigService.restoreConfig(
+                            task.getParams());
                     break;
 
-                case VERIFY_RECOVERY_TOPOLOGY:
-                    result = recoveryTopologyVerifyService.verifyTopology();
+                case VERIFY_TOPOLOGY:
+                    result = topologyVerifyService.verifyTopology(
+                            task.getParams()
+                    );
                     break;
 
                 case DEPLOY_CONFIG:

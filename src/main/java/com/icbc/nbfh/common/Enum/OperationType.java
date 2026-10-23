@@ -37,9 +37,9 @@ public enum OperationType {
     RESTORE_CONFIG,
 
     /**
-     * 验收故障恢复后的Redis和Sentinel拓扑。
+     * 验收运维操作完成后的Redis和Sentinel拓扑。
      */
-    VERIFY_RECOVERY_TOPOLOGY,
+    VERIFY_TOPOLOGY,
 
     /**
      * 部署配置文件。

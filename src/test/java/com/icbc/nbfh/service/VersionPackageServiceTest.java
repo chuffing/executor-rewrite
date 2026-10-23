@@ -105,7 +105,7 @@ class VersionPackageServiceTest {
         VersionPackageService packages = mock(VersionPackageService.class);
         MultipartFile file = mock(MultipartFile.class);
         when(file.getSize()).thenReturn(ValidationConstants.MAX_UPGRADE_PACKAGE_SIZE_BYTES);
-        when(file.getOriginalFilename()).thenReturn("redis-7.2.4-runtime.tar.gz");
+        when(file.getOriginalFilename()).thenReturn("redis-7.2.4.tar.gz");
         when(file.getInputStream()).thenReturn(new ByteArrayInputStream(
                 new byte[]{0x1f, (byte) 0x8b}));
         PlatformTaskDTO task = createTask();
@@ -185,7 +185,7 @@ class VersionPackageServiceTest {
      * 创建内存上传文件。
      */
     private MockMultipartFile upload(byte[] bytes) {
-        return new MockMultipartFile("file", "redis-7.2.4-runtime.tar.gz",
+        return new MockMultipartFile("file", "redis-7.2.4.tar.gz",
                 "application/gzip", bytes);
     }
 
@@ -296,7 +296,7 @@ class VersionPackageServiceTest {
         });
         ParameterException error = assertThrows(ParameterException.class,
                 () -> createService().saveAndValidate("TASK202610160001", "unused", file));
-        assertEquals("Redis安装包不能超过50 MiB", error.getErrorMsg());
+        assertEquals("Redis源码包不能超过50 MiB", error.getErrorMsg());
         assertEquals(0, stagingEntryCount());
     }
 
@@ -311,7 +311,7 @@ class VersionPackageServiceTest {
                 new ByteArrayInputStream(new byte[]{1}));
         ParameterException error = assertThrows(ParameterException.class,
                 () -> createService().saveAndValidate("TASK202610160001", "unused", file));
-        assertEquals("Redis安装包传输不完整", error.getErrorMsg());
+        assertEquals("Redis源码包传输不完整", error.getErrorMsg());
         assertEquals(0, stagingEntryCount());
     }
 

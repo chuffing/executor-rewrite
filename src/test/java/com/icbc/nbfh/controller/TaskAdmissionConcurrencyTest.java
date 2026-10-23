@@ -82,7 +82,7 @@ class TaskAdmissionConcurrencyTest {
                 mock(PrecheckHostService.class),
                 mock(StopRedisService.class), starting,
                 mock(StopSentinelService.class), mock(StartSentinelService.class),
-                mock(RestoreConfigService.class), mock(com.icbc.nbfh.service.RecoveryTopologyVerifyService.class),
+                mock(RestoreConfigService.class), mock(com.icbc.nbfh.service.TopologyVerifyService.class),
                 mock(DeployConfigService.class), deploying, mock(SwitchVersionService.class),
                 resultReports, registration);
         worker = (ThreadPoolExecutor) ReflectionTestUtils.getField(tasks, "executor");
@@ -263,7 +263,7 @@ class TaskAdmissionConcurrencyTest {
                     MockMultipartFile taskPart = new MockMultipartFile(
                             "task", "", MediaType.APPLICATION_JSON_VALUE, JSON.toJSONBytes(task));
                     MockMultipartFile filePart = new MockMultipartFile(
-                            "file", "redis-6.2.19-runtime.tar.gz", "application/gzip", data);
+                            "file", "redis-6.2.19.tar.gz", "application/gzip", data);
                     MockHttpServletResponse response = mvc.perform(multipart("/api/agent/version/deploy")
                             .file(taskPart).file(filePart)).andReturn().getResponse();
                     assertEquals(TaskSubmitStatus.BUSY.name(), JSON.parseObject(

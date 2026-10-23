@@ -56,10 +56,16 @@ target="$install_dir/$version"
 [[ -d "$target" && ! -L "$target" ]] || fail "目标版本未部署或版本目录不是普通目录"
 [[ "$(readlink -f -- "$target")" == "$target" ]] || fail "目标版本路径不符合安装目录约定"
 [[ -d "$target/bin" && ! -L "$target/bin" ]] || fail "目标版本bin目录不存在或不是普通目录"
-for program in redis-server redis-cli redis-sentinel; do
+for program in redis-server redis-cli; do
     [[ -f "$target/bin/$program" && ! -L "$target/bin/$program" ]] || fail "目标版本程序不存在或不是普通文件：$program"
     [[ -x "$target/bin/$program" ]] || fail "目标版本程序没有执行权限：$program"
 done
+# Redis官方编译结果中redis-sentinel由redis-server提供，部署目录保持同样的链接关系。
+sentinel="$target/bin/redis-sentinel"
+[[ -L "$sentinel" && "$(readlink -- "$sentinel")" == redis-server ]] \
+    || fail "redis-sentinel不是指向redis-server的受控软链接"
+[[ "$(readlink -f -- "$sentinel")" == "$target/bin/redis-server" && -x "$sentinel" ]] \
+    || fail "redis-sentinel软链接目标无效"
 # 新服务器允许current尚不存在；不强制覆盖检查后被其他程序占用的路径。
 # 失效软链接也满足-L，必须交给后面的有效性检查，不能当作缺失路径。
 if [[ ! -L "$current" && ! -e "$current" ]]; then

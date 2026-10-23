@@ -30,7 +30,7 @@ class SwitchVersionTaskTest {
                 mock(PrecheckHostService.class),
                 mock(StopRedisService.class), mock(StartRedisService.class),
                 mock(StopSentinelService.class), mock(StartSentinelService.class),
-                mock(RestoreConfigService.class), mock(com.icbc.nbfh.service.RecoveryTopologyVerifyService.class),
+                mock(RestoreConfigService.class), mock(com.icbc.nbfh.service.TopologyVerifyService.class),
                 mock(DeployConfigService.class), mock(DeployVersionService.class),
                 switching, resultReports, registration);
         PlatformTaskDTO task = new PlatformTaskDTO();

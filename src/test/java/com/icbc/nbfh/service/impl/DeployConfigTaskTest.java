@@ -65,7 +65,7 @@ class DeployConfigTaskTest {
         AgentTaskServiceImpl tasks = new AgentTaskServiceImpl(
                 mock(PrecheckHostService.class), mock(StopRedisService.class), mock(StartRedisService.class),
                 mock(StopSentinelService.class), mock(StartSentinelService.class), mock(RestoreConfigService.class),
-                mock(com.icbc.nbfh.service.RecoveryTopologyVerifyService.class),
+                mock(com.icbc.nbfh.service.TopologyVerifyService.class),
                 deployment, mock(DeployVersionService.class), mock(SwitchVersionService.class),
                 resultReports, registration);
         ThreadPoolExecutor worker = (ThreadPoolExecutor) ReflectionTestUtils.getField(tasks, "executor");

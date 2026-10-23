@@ -22,7 +22,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
 
-/** 只部署预编译运行包，不改变正在运行的Redis。 */
+/** 编译Redis源码并部署新版本，不改变正在运行的Redis。 */
 @Service
 @RequiredArgsConstructor
 public class DeployVersionServiceImpl implements DeployVersionService {
@@ -34,7 +34,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
     private final VersionPackageService versionPackageService;
 
     /**
-     * 部署前核对SHA256，再调用固定脚本安装新版本。
+     * 部署前核对SHA256，再调用固定脚本编译源码并安装新版本。
      */
     @Override
     public OperationResultDTO deployVersion(Map<String, String> params) {
@@ -42,12 +42,12 @@ public class DeployVersionServiceImpl implements DeployVersionService {
         // 记录当前任务开始执行的时间。
         long startTime = System.currentTimeMillis();
 
-        // 声明安装包路径。
+            // 声明源码包路径。
         Path packagePath = null;
 
         try {
 
-            // 从入参中读取安装包本地路径。
+            // 从入参中读取源码包本地路径。
             packagePath = Paths.get(params.get(TaskParamConstants.PACKAGE_LOCAL_PATH))
                     .toAbsolutePath()
                     .normalize();
@@ -57,7 +57,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
             // 获取准备部署的Redis版本。
             String targetVersion = params.get(TaskParamConstants.TARGET_VERSION);
 
-            // 获取平台提供的SHA256。后续与执行器本地安装包的SHA256比较。
+            // 获取平台提供的SHA256。后续与执行器本地源码包的SHA256比较。
             String expectedSha256 = params.get(TaskParamConstants.PACKAGE_SHA256);
 
             // 获取Redis各版本的正式安装目录。
@@ -71,27 +71,27 @@ public class DeployVersionServiceImpl implements DeployVersionService {
 
             Path installDirectory = Paths.get(installDir.trim()).toAbsolutePath().normalize();
 
-            // ======== 2. 检查安装包文件 ========
+            // ======== 2. 检查源码包文件 ========
             if (!Files.isRegularFile(packagePath)) {
                 return OperationResultDTO.failure(OperationErrorCode.PRECONDITION_FAILED,
-                        "Redis安装包不存在或不是普通文件", startTime, System.currentTimeMillis());
+                        "Redis源码包不存在或不是普通文件", startTime, System.currentTimeMillis());
             }
 
             // ======== 3. 校验SHA256 ========
 
-            // 计算执行器本地安装包的SHA256.
+            // 计算执行器本地源码包的SHA256。
             String actualSha256 = FileChecksumUtil.calculateSha256(packagePath);
             // 将本地实际摘要与平台提供的摘要比较。
             if (!expectedSha256.equalsIgnoreCase(actualSha256)) {
                 return OperationResultDTO.failure(OperationErrorCode.CHECKSUM_MISMATCH,
-                        "Redis安装包摘要不一致", startTime, System.currentTimeMillis());
+                        "Redis源码包摘要不一致", startTime, System.currentTimeMillis());
             }
 
             // ======== 4. 调用Shell部署脚本 ========
-            // 三个业务参数依次为：安装包完整路径、目标版本号、正式安装目录。
+            // 三个业务参数依次为：源码包完整路径、目标版本号、正式安装目录。
             CommandResultDTO commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.DEPLOY_VERSION,
-                    agentProperties.getOperation().getScriptTimeoutSeconds(),
+                    agentProperties.getOperation().getVersionDeployTimeoutSeconds(),
                     packagePath.toString(),
                     targetVersion,
                     installDirectory.toString());
@@ -101,14 +101,14 @@ public class DeployVersionServiceImpl implements DeployVersionService {
             // 检查Shell是否执行超时。
             if (commandResult.isTimedOut()) {
                 return OperationResultDTO.failure(OperationErrorCode.COMMAND_TIMEOUT,
-                        "Redis版本部署脚本执行超时", startTime, System.currentTimeMillis());
+                        "Redis源码编译及版本部署超时", startTime, System.currentTimeMillis());
             }
             // 检查Shell退出码是否为0。
             if (commandResult.getExitCode() != 0) {
                 return OperationResultDTO.failure(OperationErrorCode.COMMAND_EXECUTION_FAILED,
-                        "Redis版本部署脚本执行失败", startTime, System.currentTimeMillis());
+                        "Redis源码编译及版本部署失败", startTime, System.currentTimeMillis());
             }
-            return OperationResultDTO.success("Redis运行版本部署完成",
+            return OperationResultDTO.success("Redis源码编译及版本部署完成",
                     startTime, System.currentTimeMillis());
 
         } catch (FileNotFoundException e) {
@@ -126,7 +126,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
 
         } catch (IOException e) {
             return OperationResultDTO.failure(OperationErrorCode.COMMAND_EXECUTION_FAILED,
-                    "Redis目录检查、安装包读取或部署失败", startTime, System.currentTimeMillis());
+                    "Redis目录检查、源码包读取、编译或部署失败", startTime, System.currentTimeMillis());
 
         } finally {
             // 清理只交给包服务，路径检查和删除规则只有一份。

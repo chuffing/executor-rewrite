@@ -1,6 +1,6 @@
 package com.icbc.nbfh.controller;
 
-import cn.hutool.http.HttpStatus;
+import com.icbc.nbfh.common.Enum.AgentTaskResponseCodeEnum;
 import com.icbc.nbfh.common.Enum.OperationErrorCode;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.ParameterErrorCode;
@@ -62,7 +62,7 @@ public class AgentTaskController {
         if (OperationType.DEPLOY_VERSION == operationType) {
             throw new ParameterException(
                     ParameterErrorCode.TASK_PARAM_INVALID,
-                    "版本部署任务必须通过安装包上传接口提交"
+                    "版本部署任务必须通过源码包上传接口提交"
             );
         }
 
@@ -84,7 +84,7 @@ public class AgentTaskController {
 
             return ResultBean.resultBean(
                     result,
-                    HttpStatus.HTTP_UNAVAILABLE,
+                    AgentTaskResponseCodeEnum.AGENT_BUSY.getCode(),
                     result.getMessage()
             );
         }
@@ -98,16 +98,16 @@ public class AgentTaskController {
 
         return ResultBean.resultBean(
                 result,
-                HttpStatus.HTTP_ACCEPTED,
+                AgentTaskResponseCodeEnum.ACCEPTED.getCode(),
                 result.getMessage()
         );
     }
 
     /**
-     * 接收携带Redis安装包的版本部署任务。
+     * 接收携带Redis源码包的版本部署任务。
      *
      * @param request 平台任务报文
-     * @param file Redis运行包
+     * @param file Redis源码包
      * @return 任务接收结果
      */
     @PostMapping(
@@ -125,11 +125,11 @@ public class AgentTaskController {
         if (OperationType.DEPLOY_VERSION != operationType) {
             throw new ParameterException(
                     ParameterErrorCode.TASK_TYPE_UNSUPPORTED,
-                    "安装包上传接口只接收版本部署任务"
+                    "源码包上传接口只接收版本部署任务"
             );
         }
 
-        // 3. 校验上传文件的基础信息。
+        // 3. 校验上传源码包的基础信息。
         validateVersionPackage(file, request.getParams().get(TaskParamConstants.TARGET_VERSION));
 
         // 4. 创建一个新的hashMap，后面需要增加packageLocalPath。（不改动原先的Params
@@ -137,19 +137,19 @@ public class AgentTaskController {
         // 将复制后的Map重新设置到任务DTO中。
         request.setParams(params);
 
-        // 5. 调用安装包服务。
+        // 5. 调用源码包服务。
         // 这个方法会：
         // 1. 创建独立暂存目录；
         // 2. 保存上传的文件；
         // 3. 校验SHA256；
-        // 4. 返回安装包本地路径。
+        // 4. 返回源码包本地路径。
         Path packagePath = versionPackageService.saveAndValidate(
                 request.getTaskNo(),
                 params.get(TaskParamConstants.PACKAGE_SHA256),
                 file
         );
 
-        // 6. 把执行器生成的本地安装包路径加入任务参数。
+        // 6. 把执行器生成的本地源码包路径加入任务参数。
         params.put(
                 TaskParamConstants.PACKAGE_LOCAL_PATH,
                 packagePath.toString()
@@ -161,7 +161,7 @@ public class AgentTaskController {
             // 把任务交给后台异步执行。
             agentTaskService.submitTask(request);
         } catch (RejectedExecutionException e) {
-            // 部署任务未接收，清理本次已保存的安装包。
+            // 部署任务未接收，清理本次已保存的源码包。
             versionPackageService.deleteStagedPackage(packagePath);
 
             TaskSubmitResultVO result = new TaskSubmitResultVO(
@@ -172,7 +172,7 @@ public class AgentTaskController {
 
             return ResultBean.resultBean(
                     result,
-                    HttpStatus.HTTP_UNAVAILABLE,
+                    AgentTaskResponseCodeEnum.AGENT_BUSY.getCode(),
                     result.getMessage()
             );
         } catch (RuntimeException e) {
@@ -188,7 +188,7 @@ public class AgentTaskController {
 
         return ResultBean.resultBean(
                 result,
-                HttpStatus.HTTP_ACCEPTED,
+                AgentTaskResponseCodeEnum.ACCEPTED.getCode(),
                 result.getMessage()
         );
     }
@@ -246,7 +246,7 @@ public class AgentTaskController {
                     TaskSubmitStatus.BUSY.name(), "执行器繁忙，任务未接收");
             return ResultBean.resultBean(
                     result,
-                    HttpStatus.HTTP_UNAVAILABLE,
+                    AgentTaskResponseCodeEnum.AGENT_BUSY.getCode(),
                     result.getMessage()
             );
 
@@ -262,7 +262,7 @@ public class AgentTaskController {
 
         return ResultBean.resultBean(
                 result,
-                HttpStatus.HTTP_ACCEPTED,
+                AgentTaskResponseCodeEnum.ACCEPTED.getCode(),
                 result.getMessage()
         );
     }
@@ -338,8 +338,6 @@ public class AgentTaskController {
             case STOP_REDIS:
             case START_SENTINEL:
             case STOP_SENTINEL:
-            case RESTORE_CONFIG:
-            case VERIFY_RECOVERY_TOPOLOGY:
                 // 以上操作只使用执行器本机配置，不接收任务参数。
                 if (request.getParams() != null && !request.getParams().isEmpty()) {
                     throw new ParameterException(
@@ -347,6 +345,14 @@ public class AgentTaskController {
                             "当前任务类型不接收任务参数"
                     );
                 }
+                break;
+
+            case VERIFY_TOPOLOGY:
+                validateVerifyTopologyParams(request.getParams());
+                break;
+
+            case RESTORE_CONFIG:
+                validateRestoreConfigParams(request.getParams());
                 break;
 
             case DEPLOY_CONFIG:
@@ -366,6 +372,101 @@ public class AgentTaskController {
         }
 
         return operationType;
+    }
+
+    /**
+     * 拓扑验收，传入指定期望的主节点和本机角色。
+     */
+    private void validateVerifyTopologyParams(Map<String, String> params) {
+        if (params == null || params.isEmpty()) {
+            return;
+        }
+
+        String masterHostIp = params.get(
+                TaskParamConstants.EXPECTED_MASTER_HOST_IP
+        );
+        String expectedRole = params.get(TaskParamConstants.EXPECTED_ROLE);
+        if (!isIpv4(masterHostIp)) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "拓扑验收期望的主节点IP格式不正确"
+            );
+        }
+        if (!"MASTER".equalsIgnoreCase(expectedRole)
+                && !"REPLICA".equalsIgnoreCase(expectedRole)) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "拓扑验收期望的本机角色不正确"
+            );
+        }
+        if (params.size() != 2) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "拓扑验收只允许期望主节点IP和本机角色参数"
+            );
+        }
+    }
+
+    private boolean isIpv4(String hostIp) {
+        if (hostIp == null) {
+            return false;
+        }
+        String[] values = hostIp.split("\\.", -1);
+        if (values.length != 4) {
+            return false;
+        }
+        for (String value : values) {
+            try {
+                if (value.isEmpty() || Integer.parseInt(value) > 255
+                        || Integer.parseInt(value) < 0) {
+                    return false;
+                }
+            } catch (NumberFormatException exception) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 校验恢复配置操作需要的两份备份文件SHA256。
+     */
+    private void validateRestoreConfigParams(Map<String, String> params) {
+        if (params == null) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "恢复配置参数不能为空"
+            );
+        }
+
+        String redisSha256 = params.get(
+                TaskParamConstants.REDIS_CONFIG_SHA256
+        );
+        if (redisSha256 == null || !ValidationConstants.SHA256_PATTERN
+                .matcher(redisSha256).matches()) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "Redis备份配置摘要格式不正确"
+            );
+        }
+
+        String sentinelSha256 = params.get(
+                TaskParamConstants.SENTINEL_CONFIG_SHA256
+        );
+        if (sentinelSha256 == null || !ValidationConstants.SHA256_PATTERN
+                .matcher(sentinelSha256).matches()) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "Sentinel备份配置摘要格式不正确"
+            );
+        }
+
+        if (params.size() != 2) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "恢复配置任务只允许两份备份配置的SHA256参数"
+            );
+        }
     }
 
     /**
@@ -444,7 +545,7 @@ public class AgentTaskController {
 
 
     /**
-     * 校验版本部署操作需要的安装包参数。
+     * 校验版本部署操作需要的源码包参数。
      *
      * @param params 任务参数
      */
@@ -457,13 +558,13 @@ public class AgentTaskController {
             );
         }
 
-        // 1. 校验平台安装包记录编号。
+        // 1. 校验平台源码包记录编号。
         String packageId = params.get(TaskParamConstants.PACKAGE_ID);
 
         if (packageId == null || packageId.trim().isEmpty()) {
             throw new ParameterException(
                     ParameterErrorCode.TASK_PARAM_INVALID,
-                    "安装包编号不能为空"
+                    "源码包编号不能为空"
             );
         }
 
@@ -471,13 +572,13 @@ public class AgentTaskController {
             if (Long.parseLong(packageId) <= 0) {
                 throw new ParameterException(
                         ParameterErrorCode.TASK_PARAM_INVALID,
-                        "安装包编号必须大于0"
+                        "源码包编号必须大于0"
                 );
             }
         } catch (NumberFormatException e) {
             throw new ParameterException(
                     ParameterErrorCode.TASK_PARAM_INVALID,
-                    "安装包编号格式不正确"
+                    "源码包编号格式不正确"
             );
         }
 
@@ -495,7 +596,7 @@ public class AgentTaskController {
             );
         }
 
-        // 3. 校验平台提供的安装包摘要。
+        // 3. 校验平台提供的源码包摘要。
         String packageSha256 = params.get(
                 TaskParamConstants.PACKAGE_SHA256
         );
@@ -505,15 +606,15 @@ public class AgentTaskController {
                 .matcher(packageSha256).matches()) {
             throw new ParameterException(
                     ParameterErrorCode.TASK_PARAM_INVALID,
-                    "安装包摘要格式不正确"
+                    "源码包摘要格式不正确"
             );
         }
     }
 
     /**
-     * 校验平台传入的Redis运行包基础信息。
+     * 校验平台传入的Redis源码包基础信息。
      *
-     * @param file Redis运行包
+     * @param file Redis源码包
      */
     private void validateVersionPackage(MultipartFile file, String targetVersion) {
 
@@ -521,7 +622,7 @@ public class AgentTaskController {
         if (file == null || file.isEmpty()) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,
-                    "Redis安装包不能为空"
+                    "Redis源码包不能为空"
             );
         }
 
@@ -529,7 +630,7 @@ public class AgentTaskController {
                 > ValidationConstants.MAX_UPGRADE_PACKAGE_SIZE_BYTES) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,
-                    "Redis安装包不能超过50 MiB"
+                    "Redis源码包不能超过50 MiB"
             );
         }
 
@@ -540,41 +641,41 @@ public class AgentTaskController {
                 || originalFileName.trim().isEmpty()) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,
-                    "Redis安装包文件名不能为空"
+                    "Redis源码包文件名不能为空"
             );
         }
 
         if (!originalFileName.equals(originalFileName.trim())) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,
-                    "Redis安装包文件名不能包含首尾空格"
+                    "Redis源码包文件名不能包含首尾空格"
             );
         }
         if (originalFileName.length()
                 > ValidationConstants.MAX_PACKAGE_FILE_NAME_LENGTH) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,
-                    "Redis安装包文件名过长"
+                    "Redis源码包文件名过长"
             );
         }
         if (originalFileName.contains("/") || originalFileName.contains("\\")) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,
-                    "Redis安装包文件名不能包含路径"
+                    "Redis源码包文件名不能包含路径"
             );
         }
         if (originalFileName.contains("..")) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,
-                    "Redis安装包文件名不能包含父目录标记"
+                    "Redis源码包文件名不能包含父目录标记"
             );
         }
-        String expectedFileName = VersionPackageConstants.RUNTIME_PACKAGE_PREFIX
-                + targetVersion + VersionPackageConstants.RUNTIME_PACKAGE_SUFFIX;
+        String expectedFileName = VersionPackageConstants.SOURCE_PACKAGE_PREFIX
+                + targetVersion + VersionPackageConstants.SOURCE_PACKAGE_SUFFIX;
         if (!expectedFileName.equals(originalFileName)) {
             throw new ParameterException(
                     ParameterErrorCode.PACKAGE_FILE_INVALID,
-                    "Redis安装包必须命名为redis-{version}-runtime.tar.gz"
+                    "Redis源码包必须命名为redis-{version}.tar.gz"
             );
         }
     }

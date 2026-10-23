@@ -19,13 +19,20 @@ public final class TaskParamConstants {
     /** 目标版本号。 */
     public static final String TARGET_VERSION = "targetVersion";
 
+    /** 拓扑验收期望的主节点IP。 */
+    public static final String EXPECTED_MASTER_HOST_IP =
+            "expectedMasterHostIp";
+
+    /** 拓扑验收期望的本机角色。 */
+    public static final String EXPECTED_ROLE = "expectedRole";
+
     /** 升级包SHA256摘要。 */
     public static final String PACKAGE_SHA256 = "packageSha256";
 
-    /** 平台安装包记录编号。 */
+    /** 平台源码包记录编号。 */
     public static final String PACKAGE_ID = "packageId";
 
-    /** 执行器暂存的安装包绝对路径。 */
+    /** 执行器暂存的源码包绝对路径。 */
     public static final String PACKAGE_LOCAL_PATH = "packageLocalPath";
 
     /**

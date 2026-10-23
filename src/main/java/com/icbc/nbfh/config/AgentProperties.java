@@ -18,13 +18,19 @@ public class AgentProperties {
     /** 执行器名称。 */
     private String agentName;
 
+    /** 执行器外置配置文件路径。 */
+    private String configFile = "./application.yml";
+
+    /** 本机是否已有可采集的Redis和Sentinel。 */
+    private boolean redisReady = true;
+
     /** 平台通信配置。 */
     private PlatformConfig platform = new PlatformConfig();
 
     /** 定时任务配置。 */
     private ScheduleConfig schedule = new ScheduleConfig();
 
-    /** 任务结果本地保存及重试配置。 */
+    /** 任务结果本地保存配置。 */
     @Valid
     private TaskResultConfig taskResult = new TaskResultConfig();
 
@@ -73,13 +79,6 @@ public class AgentProperties {
         @NotBlank(message = "任务结果保存目录不能为空")
         private String directory = "./task-results";
 
-        /** 任务结果上报失败后的重试间隔，毫秒。 */
-        @Min(value = 1000, message = "任务结果重试间隔不能小于1000毫秒")
-        private long retryIntervalMillis = 10000;
-
-        /** 包含首次上报在内的最大上报次数。 */
-        @Min(value = 1, message = "任务结果最大上报次数不能小于1")
-        private int maxAttempts = 5;
     }
 
 
@@ -141,7 +140,7 @@ public class AgentProperties {
         /** 固定 Shell 脚本目录。 */
         private String scriptDir;
 
-        /** Redis安装包暂存目录。 */
+        /** Redis源码包暂存目录。 */
         private String packageDir = "/opt/redis/packages/";
 
         /** Redis与Sentinel配置文件的暂存根目录。 */
@@ -159,6 +158,10 @@ public class AgentProperties {
         /** Shell 执行超时，秒。 */
         private long scriptTimeoutSeconds = 10;
 
+        /** Redis源码编译及版本部署超时，秒。 */
+        @Min(value = 1, message = "Redis源码编译及版本部署超时不能小于1秒")
+        private long versionDeployTimeoutSeconds = 1800;
+
         /** Redis 停止检查超时，秒。 */
         private long stopCheckTimeoutSeconds = 10;
 
@@ -171,11 +174,11 @@ public class AgentProperties {
         /** Redis 启动检查间隔，毫秒。 */
         private long startCheckIntervalMillis = 1000;
 
-        /** 故障恢复拓扑验收超时，秒。 */
+        /** Redis和Sentinel拓扑验收超时，秒。 */
         @Min(value = 1, message = "拓扑验收超时不能小于1秒")
         private long topologyCheckTimeoutSeconds = 60;
 
-        /** 故障恢复拓扑验收间隔，毫秒。 */
+        /** Redis和Sentinel拓扑验收间隔，毫秒。 */
         @Min(value = 100, message = "拓扑验收间隔不能小于100毫秒")
         private long topologyCheckIntervalMillis = 5000;
     }

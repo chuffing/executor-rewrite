@@ -13,9 +13,4 @@ public interface TaskResultReportService {
      * @param report 任务执行结果
      */
     void saveAndReport(TaskResultReportDTO report);
-
-    /**
-     * 重试尚未成功上报的本地任务结果。
-     */
-    void retryPendingResults();
 }

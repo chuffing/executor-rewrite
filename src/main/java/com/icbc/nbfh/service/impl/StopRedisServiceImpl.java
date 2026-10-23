@@ -33,15 +33,34 @@ public class StopRedisServiceImpl implements StopRedisService {
         // 获取开始时间。
         long startTime = System.currentTimeMillis();
 
+        // 1. Redis端口已经关闭时，目标状态已经满足，直接返回成功。
+        try {
+            if (isRedisStopped()) {
+                return OperationResultDTO.success(
+                        "Redis已经处于停止状态",
+                        startTime,
+                        System.currentTimeMillis()
+                );
+            }
+        } catch (IOException e) {
+            return OperationResultDTO.failure(
+                    OperationErrorCode.HEALTH_CHECK_FAILED,
+                    "Redis停止前状态检查失败",
+                    startTime,
+                    System.currentTimeMillis()
+            );
+        }
+
         // 脚本执行结果。
         CommandResultDTO commandResult;
 
-        // 执行脚本。
+        // 2. Redis仍在运行，执行停止脚本。
         try {
             commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.STOP_REDIS,
                     agentProperties.getOperation().getScriptTimeoutSeconds()
             );
+
         } catch (FileNotFoundException e) {
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_NOT_FOUND,
@@ -49,6 +68,7 @@ public class StopRedisServiceImpl implements StopRedisService {
                     startTime,
                     System.currentTimeMillis()
             );
+
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
 
@@ -58,6 +78,7 @@ public class StopRedisServiceImpl implements StopRedisService {
                     startTime,
                     System.currentTimeMillis()
             );
+
         } catch (IOException e) {
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_EXECUTION_FAILED,
@@ -69,6 +90,13 @@ public class StopRedisServiceImpl implements StopRedisService {
 
         // 判断脚本是否执行超时
         if (commandResult.isTimedOut()) {
+            if (isRedisStoppedAfterScript()) {
+                return OperationResultDTO.success(
+                        "Redis已经处于停止状态",
+                        startTime,
+                        System.currentTimeMillis()
+                );
+            }
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_TIMEOUT,
                     "Redis停止脚本执行超时",
@@ -78,6 +106,13 @@ public class StopRedisServiceImpl implements StopRedisService {
         }
         // 判断脚本退出码
         if (commandResult.getExitCode() != 0) {
+            if (isRedisStoppedAfterScript()) {
+                return OperationResultDTO.success(
+                        "Redis已经处于停止状态",
+                        startTime,
+                        System.currentTimeMillis()
+                );
+            }
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_EXECUTION_FAILED,
                     "Redis停止脚本执行失败",
@@ -109,6 +144,33 @@ public class StopRedisServiceImpl implements StopRedisService {
             );
         }
 
+    }
+
+    /**
+     * 检查Redis端口是否已经关闭。
+     */
+    private boolean isRedisStopped() throws IOException {
+
+        AgentProperties.RedisConfig redisConfig =
+                agentProperties.getRedis();
+
+        return !RedisCheckUtil.isLocalPortListening(
+                redisConfig.getHost(),
+                redisConfig.getPort(),
+                redisConfig.getTimeout()
+        );
+    }
+
+    /**
+     * 脚本返回异常时再次确认Redis是否已经停止。
+     */
+    private boolean isRedisStoppedAfterScript() {
+
+        try {
+            return isRedisStopped();
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     /**

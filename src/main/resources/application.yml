@@ -13,6 +13,13 @@ spring:
 
 agent:
 
+  # 执行器外置配置文件；服务器切换成功后用于持久化redisReady。
+  config-file: ${AGENT_CONFIG_FILE:./application.yml}
+
+  # true表示本机已有可采集的Redis和Sentinel。
+  # 新服务器预注册时需人工改为false。
+  redisReady: true
+
   # 执行器基础信息
   agent-name: ${AGENT_NAME:}
 
@@ -28,14 +35,10 @@ agent:
     collect-interval: ${AGENT_COLLECT_INTERVAL:300000}
     heartbeat-interval: ${AGENT_HEARTBEAT_INTERVAL:30000}
 
-  # 运维任务结果本地保存及补报
+  # 运维任务结果本地保存
   task-result:
     # 相对路径基于Java工作目录，生产环境建议配置独立绝对路径。
     directory: ${AGENT_TASK_RESULT_DIR:./task-results}
-    # 上报失败后每10秒重试一次。
-    retry-interval-millis: ${AGENT_TASK_RESULT_RETRY_INTERVAL:10000}
-    # 包含首次立即上报在内，最多上报5次。
-    max-attempts: ${AGENT_TASK_RESULT_MAX_ATTEMPTS:5}
 
   # Redis
   redis:
@@ -82,11 +85,11 @@ agent:
   operation:
     # 固定Shell脚本目录，须事先准备7个已实现脚本。
     script-dir: ${AGENT_SCRIPT_DIR:/opt/redis/scripts}
-    # 安装包暂存根目录，须事先存在；Java只自动创建其下staging及任务目录。
+    # Redis源码包暂存根目录，须事先存在；Java只自动创建其下staging及任务目录。
     package-dir: ${AGENT_PACKAGE_DIR:/opt/redis/packages/}
     # Redis与Sentinel配置文件的暂存根目录，须事先存在。
     config-file-dir: ${AGENT_CONFIG_FILE_DIR:/opt/redis/configfiles}
-    # 各版本正式安装根目录，须事先存在；部署脚本创建{targetVersion}/bin。
+    # 各版本正式安装根目录，须事先存在；源码编译部署脚本创建{targetVersion}/bin。
     install-dir: ${AGENT_INSTALL_DIR:/opt/redis/versions/}
     # 当前版本软链接路径，不是真实目录；SWITCH_VERSION负责首次创建或切换。
     current-dir: ${AGENT_CURRENT_DIR:/opt/redis/current}
@@ -96,12 +99,14 @@ agent:
 
     # Shell脚本总超时，单位秒；可由外部配置覆盖，当前默认10秒。
     script-timeout-seconds: 10
+    # Redis源码编译及版本部署超时，单位秒，默认30分钟。
+    version-deploy-timeout-seconds: ${AGENT_VERSION_DEPLOY_TIMEOUT_SECONDS:1800}
     # Java启停健康检查：timeout单位秒，interval单位毫秒。
     stop-check-timeout-seconds: 10
     stop-check-interval-millis: 1000
     start-check-timeout-seconds: 30
     start-check-interval-millis: 1000
-    # 故障恢复完成后的拓扑验收：最多等待60秒，每5秒采集一次。
+    # 运维操作完成后的拓扑验收：最多等待60秒，每5秒采集一次。
     topology-check-timeout-seconds: ${AGENT_TOPOLOGY_CHECK_TIMEOUT_SECONDS:60}
     topology-check-interval-millis: ${AGENT_TOPOLOGY_CHECK_INTERVAL_MILLIS:5000}
 

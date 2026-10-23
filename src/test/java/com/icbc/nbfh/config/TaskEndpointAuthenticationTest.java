@@ -143,7 +143,7 @@ class TaskEndpointAuthenticationTest {
         return multipart(path)
                 .file(new MockMultipartFile("task", "", MediaType.APPLICATION_JSON_VALUE,
                         objectMapper.writeValueAsBytes(task)))
-                .file(new MockMultipartFile("file", "redis-6.2.19-runtime.tar.gz",
+                .file(new MockMultipartFile("file", "redis-6.2.19.tar.gz",
                         MediaType.APPLICATION_OCTET_STREAM_VALUE, new byte[]{1}));
     }
 }

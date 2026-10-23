@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 
-# 只在临时目录测试；ELF文件是合成数据，版本执行由timeout替身拦截。
+# 只在临时目录测试；源码编译和版本执行分别由make、timeout替身拦截。
 scripts="$(cd -- "${BASH_SOURCE[0]%/*}" && pwd -P)"
 native_kernel="$(uname -s)"
 root="$(mktemp -d)"
@@ -27,7 +27,10 @@ if [[ "$native_kernel" != Linux ]]; then
     for source_script in "$scripts"/*.sh; do
         "$BASH" -n "$source_script"
     done
-    sed 's/\[\[ -x "\$program" \]\]/true/' "$scripts/deploy-version.sh" > "$root/scripts/deploy-version.sh"
+    sed -e 's/\[\[ -f "\$compiled_program" && -x "\$compiled_program" && ! -L "\$compiled_program" \]\]/[[ -f "$compiled_program" \&\& ! -L "$compiled_program" ]]/' \
+        -e 's/\[\[ -f "\$program" && -x "\$program" && ! -L "\$program" \]\]/[[ -f "$program" \&\& ! -L "$program" ]]/' \
+        -e 's/\[\[ -x "\$program" \]\]/true/' \
+        "$scripts/deploy-version.sh" > "$root/scripts/deploy-version.sh"
     sed 's/\[\[ -x "\$target\/bin\/\$program" \]\]/true/' "$scripts/switch-version.sh" > "$root/scripts/switch-version.sh"
     cp -- "$scripts/precheck-host.sh" "$root/scripts/precheck-host.sh"
     scripts="$root/scripts"
@@ -49,6 +52,27 @@ cat > "$root/fake/uname" <<'MOCK'
 #!/bin/bash
 echo Linux
 MOCK
+cat > "$root/fake/make" <<'MOCK'
+#!/bin/bash
+[[ $# -eq 3 && "$1" == -C && "$3" == -j2 ]] || exit 1
+[[ "${FAKE_MAKE_FAIL:-}" != yes ]] || exit 1
+source_directory="$2"
+mkdir -p -- "$source_directory/src"
+rm -f -- "$source_directory/src/redis-server" "$source_directory/src/redis-cli"
+for binary in redis-server redis-cli; do
+    [[ "${FAKE_MAKE_MISSING:-}" != "$binary" ]] || continue
+    if [[ "${FAKE_MAKE_BAD_ELF:-}" == "$binary" ]]; then
+        printf not-elf > "$source_directory/src/$binary"
+    else
+        printf '\177ELFsynthetic-test-data' > "$source_directory/src/$binary"
+    fi
+    chmod 700 -- "$source_directory/src/$binary"
+done
+MOCK
+cat > "$root/fake/cc" <<'MOCK'
+#!/bin/bash
+exit 0
+MOCK
 cat > "$root/fake/mv" <<'MOCK'
 #!/bin/bash
 [[ "${FAKE_MOVE_FAIL:-}" != yes ]] || exit 1
@@ -69,17 +93,21 @@ elif [[ "${FAKE_LINK_RACE:-}" == directory ]]; then
 fi
 exec /bin/ln "$@"
 MOCK
-chmod 700 -- "$root/fake/timeout" "$root/fake/uname" "$root/fake/mv" "$root/fake/ln"
+chmod 700 -- "$root/fake/timeout" "$root/fake/uname" "$root/fake/make" \
+    "$root/fake/cc" "$root/fake/mv" "$root/fake/ln"
 export PATH="$root/fake:$PATH"
 
 # 为每个用例准备独立、符合执行器上传约定的暂存目录。
 prepare() {
     case_dir="$root/case-$((passed + skipped))"
-    mkdir -p -- "$case_dir/packages/staging/TASK202610170001-test" "$case_dir/versions" "$case_dir/source/redis-6.2.19/bin"
+    mkdir -p -- "$case_dir/packages/staging/TASK202610170001-test" \
+        "$case_dir/versions" "$case_dir/source/redis-6.2.19/src"
     package="$case_dir/packages/staging/TASK202610170001-test/package.tar.gz"
     installed="$case_dir/versions"
-    for binary in redis-server redis-cli redis-sentinel; do
-        printf '\177ELFsynthetic-test-data' > "$case_dir/source/redis-6.2.19/bin/$binary"
+    echo 'all:' > "$case_dir/source/redis-6.2.19/Makefile"
+    for binary in redis-server redis-cli; do
+        printf '\177ELFsynthetic-test-data' > "$case_dir/source/redis-6.2.19/src/$binary"
+        chmod 700 -- "$case_dir/source/redis-6.2.19/src/$binary"
     done
     echo keep > "$case_dir/redis.conf"
     tar --format=ustar --mode=0755 -czf "$package" -C "$case_dir/source" redis-6.2.19
@@ -89,10 +117,10 @@ prepare() {
 prepare_switch() {
     prepare
     mkdir -p -- "$installed/6.2.19/bin"
-    for binary in redis-server redis-cli redis-sentinel; do
-        cp -- "$case_dir/source/redis-6.2.19/bin/$binary" "$installed/6.2.19/bin/$binary"
-        chmod 700 -- "$installed/6.2.19/bin/$binary"
-    done
+    cp -- "$case_dir/source/redis-6.2.19/src/redis-server" "$installed/6.2.19/bin/redis-server"
+    cp -- "$case_dir/source/redis-6.2.19/src/redis-cli" "$installed/6.2.19/bin/redis-cli"
+    ln -s -- redis-server "$installed/6.2.19/bin/redis-sentinel"
+    chmod 700 -- "$installed/6.2.19/bin/redis-server" "$installed/6.2.19/bin/redis-cli"
 }
 
 # 切换失败只应清理本次临时目录和锁，不应残留中间链接。
@@ -126,26 +154,43 @@ for script in "$scripts"/*.sh; do
 done
 passed=$((passed + 1))
 
-# 合成运行包成功部署；重复部署拒绝且既有版本保持原样。
+# 合成源码包成功编译部署；重复部署校验版本完整后幂等成功。
 prepare
 "$BASH" "$scripts/deploy-version.sh" "$package" 6.2.19 "$installed"
 [[ -f "$installed/6.2.19/bin/redis-server" && -f "$package" ]]
 if compgen -G "$installed/.deploy-*" >/dev/null; then exit 1; fi
 passed=$((passed + 1))
 echo keep-version > "$installed/6.2.19/keep"
+if [[ "$native_kernel" == Linux ]]; then
+    "$BASH" "$scripts/deploy-version.sh" "$package" 6.2.19 "$installed" >/dev/null
+    [[ "$(cat "$installed/6.2.19/keep")" == keep-version ]]
+    passed=$((passed + 1))
+else
+    skipped=$((skipped + 1))
+    echo "SKIP: Windows不验证依赖Linux软链接的重复部署幂等"
+fi
+
+# 已存在版本目录不完整时拒绝，不覆盖也不删除原目录。
+prepare
+mkdir -p -- "$installed/6.2.19/bin"
+echo keep-incomplete > "$installed/6.2.19/keep"
 if "$BASH" "$scripts/deploy-version.sh" "$package" 6.2.19 "$installed" >/dev/null 2>&1; then exit 1; fi
-[[ "$(cat "$installed/6.2.19/keep")" == keep-version ]]
+[[ "$(cat "$installed/6.2.19/keep")" == keep-incomplete ]]
 passed=$((passed + 1))
 
-# 缺少程序、伪造ELF、版本不符、版本命令失败。
+# 编译失败、缺少编译产物、伪造ELF、版本不符、版本命令失败。
 prepare
-rm -- "$case_dir/source/redis-6.2.19/bin/redis-cli"
-tar --format=ustar --mode=0755 -czf "$package" -C "$case_dir/source" redis-6.2.19
+export FAKE_MAKE_FAIL=yes
 assert_failed_deploy
+unset FAKE_MAKE_FAIL
 prepare
-printf not-elf > "$case_dir/source/redis-6.2.19/bin/redis-server"
-tar --format=ustar --mode=0755 -czf "$package" -C "$case_dir/source" redis-6.2.19
+export FAKE_MAKE_MISSING=redis-cli
 assert_failed_deploy
+unset FAKE_MAKE_MISSING
+prepare
+export FAKE_MAKE_BAD_ELF=redis-server
+assert_failed_deploy
+unset FAKE_MAKE_BAD_ELF
 prepare
 export FAKE_VERSION=5.0.0
 assert_failed_deploy
@@ -155,13 +200,13 @@ export FAKE_VERSION_FAIL=yes
 assert_failed_deploy
 unset FAKE_VERSION_FAIL
 
-# 禁止生产配置、路径穿越、重复成员及不可执行成员。
+# 缺少源码结构、顶层目录不匹配、路径穿越及重复成员都必须拒绝。
 prepare
-echo config > "$case_dir/source/redis-6.2.19/redis.conf"
+rm -- "$case_dir/source/redis-6.2.19/Makefile"
 tar --format=ustar --mode=0755 -czf "$package" -C "$case_dir/source" redis-6.2.19
 assert_failed_deploy
 prepare
-tar --format=ustar --mode=0755 --transform='s,redis-6.2.19/bin/redis-cli,../outside,' \
+tar --format=ustar --mode=0755 --transform='s,redis-6.2.19/src/redis-cli,../outside,' \
     -czf "$package" -C "$case_dir/source" redis-6.2.19
 assert_failed_deploy
 [[ ! -e "$case_dir/outside" ]]
@@ -171,10 +216,11 @@ tar --format=ustar --mode=0755 --transform='s,^,/,g' \
 assert_failed_deploy
 prepare
 tar --format=ustar --mode=0755 -czf "$package" -C "$case_dir/source" \
-    redis-6.2.19 redis-6.2.19/bin/redis-server
+    redis-6.2.19 redis-6.2.19/Makefile
 assert_failed_deploy
 prepare
-tar --format=ustar --mode=0644 -czf "$package" -C "$case_dir/source" redis-6.2.19
+mv -- "$case_dir/source/redis-6.2.19" "$case_dir/source/redis-6.2.18"
+tar --format=ustar --mode=0755 -czf "$package" -C "$case_dir/source" redis-6.2.18
 assert_failed_deploy
 
 # 发布中断时清理本次创建的正式目录。
@@ -186,10 +232,10 @@ unset FAKE_MOVE_FAIL
 # current为真实目录时拒绝，既有内容保持不变。
 prepare
 mkdir -p -- "$installed/6.2.19/bin" "$case_dir/current"
-for binary in redis-server redis-cli redis-sentinel; do
-    cp -- "$case_dir/source/redis-6.2.19/bin/$binary" "$installed/6.2.19/bin/$binary"
-    chmod 700 -- "$installed/6.2.19/bin/$binary"
-done
+cp -- "$case_dir/source/redis-6.2.19/src/redis-server" "$installed/6.2.19/bin/redis-server"
+cp -- "$case_dir/source/redis-6.2.19/src/redis-cli" "$installed/6.2.19/bin/redis-cli"
+ln -s -- redis-server "$installed/6.2.19/bin/redis-sentinel"
+chmod 700 -- "$installed/6.2.19/bin/redis-server" "$installed/6.2.19/bin/redis-cli"
 echo keep > "$case_dir/current/keep"
 if "$BASH" "$scripts/switch-version.sh" 6.2.19 "$installed" "$case_dir/current" >/dev/null 2>&1; then exit 1; fi
 [[ "$(cat "$case_dir/current/keep")" == keep && ! -e "$case_dir/.current.switch-lock" ]]
@@ -233,13 +279,8 @@ passed=$((passed + 1))
 if PATH="$root/fake" "$BASH" "$scripts/precheck-host.sh" >/dev/null 2>&1; then exit 1; fi
 passed=$((passed + 1))
 
-# 原生软链接、链接归档及mv原子替换必须在Linux验证，Windows不模拟其原子性。
+# 原生软链接及mv原子替换必须在Linux验证，Windows不模拟其原子性。
 if [[ "$native_kernel" == Linux ]]; then
-    prepare
-    rm -- "$case_dir/source/redis-6.2.19/bin/redis-sentinel"
-    ln -s redis-server "$case_dir/source/redis-6.2.19/bin/redis-sentinel"
-    tar --format=ustar --mode=0755 -czf "$package" -C "$case_dir/source" redis-6.2.19
-    assert_failed_deploy
     # 首次创建及重复请求均成功，且不残留互斥锁。
     prepare_switch
     "$BASH" "$scripts/switch-version.sh" 6.2.19 "$installed" "$case_dir/current"
@@ -291,7 +332,7 @@ if [[ "$native_kernel" == Linux ]]; then
     [[ "$(readlink -f -- "$case_dir/current")" == "$installed/6.2.18" ]]
     passed=$((passed + 1))
 else
-    echo "SKIP: Windows不验证Linux原生符号链接归档及原子替换"
-    skipped=$((skipped + 9))
+    echo "SKIP: Windows不验证Linux原生符号链接及原子替换"
+    skipped=$((skipped + 8))
 fi
 echo "RUNTIME_SCRIPT_TESTS: passed=$passed skipped=$skipped"

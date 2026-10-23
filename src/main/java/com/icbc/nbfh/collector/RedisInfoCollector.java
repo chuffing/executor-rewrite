@@ -1,6 +1,5 @@
 package com.icbc.nbfh.collector;
 
-import com.icbc.nbfh.common.constant.RedisProtocolConstants;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.MetricDataDTO;
 import lombok.extern.slf4j.Slf4j;
@@ -68,9 +67,7 @@ public class RedisInfoCollector {
             try (Jedis jedis = jedisPool.getResource()) {
                 String infoAll = jedis.info("all");
                 String infoStats = jedis.info("stats");
-                String infoReplication = jedis.info(
-                        RedisProtocolConstants.INFO_REPLICATION
-                );
+                String infoReplication = jedis.info("replication");
                 String infoServer = jedis.info("server");
                 String cmdStats = jedis.info("commandstats");
 
@@ -158,16 +155,14 @@ public class RedisInfoCollector {
 
                 // 6. 节点身份
                 data.setRole(server.getOrDefault("redis_mode", "standalone"));
-                String role = repl.get(RedisProtocolConstants.INFO_ROLE);
+                String role = repl.get("role");
                 if (role != null) data.setRole(role);
                 data.setRedisVersion(server.get("redis_version"));
                 data.setRunId(server.get("run_id"));
 
                 // 7. 主备情况
-                data.setMasterHost(repl.get(
-                        RedisProtocolConstants.INFO_MASTER_HOST));
-                String masterPort = repl.get(
-                        RedisProtocolConstants.INFO_MASTER_PORT);
+                data.setMasterHost(repl.get("master_host"));
+                String masterPort = repl.get("master_port");
                 if (masterPort != null) data.setMasterPort(masterPort);
                 data.setConnectedSlaves(repl.get("connected_slaves"));
 
@@ -176,12 +171,12 @@ public class RedisInfoCollector {
                 if (replOffset == null) replOffset = "0";
                 data.setReplDelay(replOffset);
 
-                data.setStatus(RedisProtocolConstants.STATUS_UP);
+                data.setStatus("up");
                 hasLastSample = true;
             }
         } catch (Exception e) {
             log.error("采集 Redis 指标失败", e);
-            data.setStatus(RedisProtocolConstants.STATUS_DOWN);
+            data.setStatus("down");
             data.setErrorMsg(e.getMessage());
         }
         return data;

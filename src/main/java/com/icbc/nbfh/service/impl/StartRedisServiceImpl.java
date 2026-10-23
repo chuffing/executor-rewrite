@@ -33,16 +33,21 @@ public class StartRedisServiceImpl implements StartRedisService {
         // 获取开始时间。
         long startTime = System.currentTimeMillis();
 
+        AgentProperties.RedisConfig redisConfig =
+                agentProperties.getRedis();
+
         // 脚本执行结果。
         CommandResultDTO commandResult;
 
-        // 将已有的current路径传给启动脚本。
+        // 1. 启动脚本会先判断Redis是否已经处于运行状态。
         try {
+
             commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.START_REDIS,
                     agentProperties.getOperation().getScriptTimeoutSeconds(),
                     agentProperties.getOperation().getCurrentDir()
             );
+
         } catch (FileNotFoundException e) {
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_NOT_FOUND,
@@ -50,6 +55,7 @@ public class StartRedisServiceImpl implements StartRedisService {
                     startTime,
                     System.currentTimeMillis()
             );
+
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
 
@@ -59,6 +65,7 @@ public class StartRedisServiceImpl implements StartRedisService {
                     startTime,
                     System.currentTimeMillis()
             );
+
         } catch (IOException e) {
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_EXECUTION_FAILED,
@@ -70,6 +77,13 @@ public class StartRedisServiceImpl implements StartRedisService {
 
         // 判断脚本是否执行超时。
         if (commandResult.isTimedOut()) {
+            if (isRedisRunning(redisConfig)) {
+                return OperationResultDTO.success(
+                        "Redis已经处于运行状态",
+                        startTime,
+                        System.currentTimeMillis()
+                );
+            }
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_TIMEOUT,
                     "Redis启动脚本执行超时",
@@ -80,6 +94,13 @@ public class StartRedisServiceImpl implements StartRedisService {
 
         // 判断脚本退出码。
         if (commandResult.getExitCode() != 0) {
+            if (isRedisRunning(redisConfig)) {
+                return OperationResultDTO.success(
+                        "Redis已经处于运行状态",
+                        startTime,
+                        System.currentTimeMillis()
+                );
+            }
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_EXECUTION_FAILED,
                     "Redis启动脚本执行失败",
@@ -148,6 +169,20 @@ public class StartRedisServiceImpl implements StartRedisService {
                 "Redis未在规定时间内恢复服务",
                 startTime,
                 System.currentTimeMillis()
+        );
+    }
+
+    /**
+     * 检查Redis是否已经达到正常运行状态。
+     */
+    private boolean isRedisRunning(
+            AgentProperties.RedisConfig redisConfig) {
+
+        return RedisCheckUtil.isRedisServer(
+                redisConfig.getHost(),
+                redisConfig.getPort(),
+                redisConfig.getPassword(),
+                redisConfig.getTimeout()
         );
     }
 

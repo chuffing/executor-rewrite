@@ -38,12 +38,32 @@ fi
 
 # 从current指向的版本中获取启动程序，不再查找旧程序或PATH。
 server_bin="$version_dir/bin/redis-server"
+cli_bin="$version_dir/bin/redis-cli"
 if [[ ! -f "$server_bin" ]]; then
     echo "Redis启动程序不存在或不是普通文件：$server_bin" >&2
     exit 1
 fi
 if [[ ! -x "$server_bin" ]]; then
     echo "Redis启动程序没有执行权限：$server_bin" >&2
+    exit 1
+fi
+if [[ ! -f "$cli_bin" || ! -x "$cli_bin" ]]; then
+    echo "Redis客户端程序不存在或不可执行：$cli_bin" >&2
+    exit 1
+fi
+
+# Redis已经正常运行时不再启动第二个进程，重复任务直接成功。
+host="${REDIS_HOST:-127.0.0.1}"
+port="${REDIS_PORT:-6379}"
+: "${REDIS_PASSWORD:?请配置REDIS_PASSWORD}"
+export REDISCLI_AUTH="${REDIS_PASSWORD}"
+if server_info="$("$cli_bin" --raw -h "$host" -p "$port" INFO server 2>/dev/null)"; then
+    server_info="${server_info//$'\r'/}"
+    if grep -Eq '^redis_mode:(standalone|cluster)$' <<< "$server_info"; then
+        echo "Redis已经处于运行状态"
+        exit 0
+    fi
+    echo "Redis端口运行的不是预期Redis服务" >&2
     exit 1
 fi
 

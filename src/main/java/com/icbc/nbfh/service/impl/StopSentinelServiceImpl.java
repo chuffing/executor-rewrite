@@ -34,10 +34,28 @@ public class StopSentinelServiceImpl implements StopSentinelService {
         // 获取开始时间。
         long startTime = System.currentTimeMillis();
 
+        // 1. Sentinel端口已经关闭时，目标状态已经满足，直接返回成功。
+        try {
+            if (isSentinelStopped()) {
+                return OperationResultDTO.success(
+                        "Sentinel已经处于停止状态",
+                        startTime,
+                        System.currentTimeMillis()
+                );
+            }
+        } catch (IOException e) {
+            return OperationResultDTO.failure(
+                    OperationErrorCode.SENTINEL_FAILED,
+                    "Sentinel停止前状态检查失败",
+                    startTime,
+                    System.currentTimeMillis()
+            );
+        }
+
         // 脚本执行结果。
         CommandResultDTO commandResult;
 
-        // 执行脚本。
+        // 2. Sentinel仍在运行，执行停止脚本。
         try {
             commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.STOP_SENTINEL,
@@ -70,6 +88,13 @@ public class StopSentinelServiceImpl implements StopSentinelService {
 
         // 判断脚本是否执行超时。
         if (commandResult.isTimedOut()) {
+            if (isSentinelStoppedAfterScript()) {
+                return OperationResultDTO.success(
+                        "Sentinel已经处于停止状态",
+                        startTime,
+                        System.currentTimeMillis()
+                );
+            }
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_TIMEOUT,
                     "Sentinel停止脚本执行超时",
@@ -80,6 +105,13 @@ public class StopSentinelServiceImpl implements StopSentinelService {
 
         // 判断脚本退出码。
         if (commandResult.getExitCode() != 0) {
+            if (isSentinelStoppedAfterScript()) {
+                return OperationResultDTO.success(
+                        "Sentinel已经处于停止状态",
+                        startTime,
+                        System.currentTimeMillis()
+                );
+            }
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_EXECUTION_FAILED,
                     "Sentinel停止脚本执行失败",
@@ -109,6 +141,33 @@ public class StopSentinelServiceImpl implements StopSentinelService {
                     startTime,
                     System.currentTimeMillis()
             );
+        }
+    }
+
+    /**
+     * 检查Sentinel端口是否已经关闭。
+     */
+    private boolean isSentinelStopped() throws IOException {
+
+        AgentProperties.SentinelConfig sentinelConfig =
+                agentProperties.getSentinel();
+
+        return !RedisCheckUtil.isLocalPortListening(
+                sentinelConfig.getHost(),
+                sentinelConfig.getPort(),
+                sentinelConfig.getTimeout()
+        );
+    }
+
+    /**
+     * 脚本返回异常时再次确认Sentinel是否已经停止。
+     */
+    private boolean isSentinelStoppedAfterScript() {
+
+        try {
+            return isSentinelStopped();
+        } catch (IOException e) {
+            return false;
         }
     }
 

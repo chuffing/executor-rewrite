@@ -20,7 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
-/** 安装包接收、摘要校验及暂存清理服务。 */
+/** Redis源码包接收、摘要校验及暂存清理服务。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -29,18 +29,18 @@ public class VersionPackageServiceImpl implements VersionPackageService {
     private final AgentProperties agentProperties;
 
     /**
-     * 流式保存安装包，摘要一致后返回正式暂存路径。
+     * 流式保存源码包，摘要一致后返回正式暂存路径。
      */
     @Override
     public Path saveAndValidate(String taskNo, String expectedSha256,
                                 MultipartFile file) throws IOException {
 
-        // ======== 1. 读取安装包目录 ========
+        // ======== 1. 读取源码包目录 ========
 
-        // 获取安装包存放目录。
+        // 获取源码包存放目录。
         String packageDir = agentProperties.getOperation().getPackageDir();
         if (packageDir == null || packageDir.trim().isEmpty()) {
-            throw new IllegalStateException("Redis安装包目录未配置");
+            throw new IllegalStateException("Redis源码包目录未配置");
         }
 
         // 将字符串形式的目录转换为Path对象。
@@ -83,7 +83,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
                     if (receivedSize > ValidationConstants.MAX_UPGRADE_PACKAGE_SIZE_BYTES) {
                         throw new ParameterException(
                                 ParameterErrorCode.PACKAGE_FILE_INVALID,
-                                "Redis安装包不能超过50 MiB"
+                                "Redis源码包不能超过50 MiB"
                         );
                     }
                     output.write(buffer, 0, length);
@@ -96,7 +96,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
             if (receivedSize == 0) {
                 throw new ParameterException(
                         ParameterErrorCode.PACKAGE_FILE_INVALID,
-                        "Redis安装包不能为空"
+                    "Redis源码包不能为空"
                 );
             }
 
@@ -104,7 +104,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
             if (receivedSize != file.getSize()) {
                 throw new ParameterException(
                         ParameterErrorCode.PACKAGE_FILE_INVALID,
-                        "Redis安装包传输不完整"
+                    "Redis源码包传输不完整"
                 );
             }
 
@@ -113,7 +113,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
             if (!expectedSha256.equalsIgnoreCase(actualSha256)) {
                 throw new ParameterException(
                         ParameterErrorCode.PACKAGE_CHECKSUM_MISMATCH,
-                        "Redis安装包SHA256与平台提供的摘要不一致"
+                    "Redis源码包SHA256与平台提供的摘要不一致"
                 );
             }
 
@@ -151,13 +151,13 @@ public class VersionPackageServiceImpl implements VersionPackageService {
                     .toRealPath().resolve(
                             VersionPackageConstants.STAGING_DIRECTORY_NAME);
             if (requestDirectory == null) {
-                throw new IOException("缺少安装包暂存目录");
+                throw new IOException("缺少源码包暂存目录");
             }
             if (!stagingDirectory.equals(requestDirectory.getParent())) {
-                throw new IOException("安装包清理路径不在暂存目录内");
+                throw new IOException("源码包清理路径不在暂存目录内");
             }
         } catch (IOException | RuntimeException e) {
-            log.warn("Redis安装包清理路径检查失败，path={}", packagePath, e);
+            log.warn("Redis源码包清理路径检查失败，path={}", packagePath, e);
             return;
         }
 
@@ -177,7 +177,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
         try {
             Files.deleteIfExists(path);
         } catch (IOException | SecurityException e) {
-            log.warn("Redis安装包暂存文件清理失败，path={}", path, e);
+            log.warn("Redis源码包暂存文件清理失败，path={}", path, e);
         }
     }
 }

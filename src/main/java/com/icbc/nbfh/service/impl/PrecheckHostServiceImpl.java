@@ -135,27 +135,38 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
                         startTime, System.currentTimeMillis());
             }
 
-            // 检查Redis配置的本机端口是否已有服务监听。
+            // 检查Redis配置的本机端口。
+            // 端口空闲可以继续部署；如果已经运行的是本机Redis，也允许重跑任务。
             if (RedisCheckUtil.isLocalPortListening(agentProperties.getRedis().getHost(),
                     agentProperties.getRedis().getPort(), agentProperties.getRedis().getTimeout())) {
 
-                // 如果端口已有服务监听，说明新机环境不满足部署要求。
-                return OperationResultDTO.failure(
-                        OperationErrorCode.PORT_OCCUPIED,
-                        "Redis目标端口已有服务监听",
-                        startTime, System.currentTimeMillis());
+                if (!RedisCheckUtil.isRedisServer(
+                        agentProperties.getRedis().getHost(),
+                        agentProperties.getRedis().getPort(),
+                        agentProperties.getRedis().getPassword(),
+                        agentProperties.getRedis().getTimeout())) {
+                    return OperationResultDTO.failure(
+                            OperationErrorCode.PORT_OCCUPIED,
+                            "Redis目标端口已被其他服务占用",
+                            startTime, System.currentTimeMillis());
+                }
             }
 
-            // 检查Sentinel配置的本机端口是否已有服务监听。
+            // 检查Sentinel配置的本机端口，已经运行正确Sentinel时允许重跑任务。
             if (RedisCheckUtil.isLocalPortListening(agentProperties.getSentinel().getHost(),
                     agentProperties.getSentinel().getPort(), agentProperties.getSentinel().getTimeout())) {
 
-                // 如果端口已有服务监听，说明新机环境不满足部署要求。
-                return OperationResultDTO.failure(
-                        OperationErrorCode.PORT_OCCUPIED,
-                        "Sentinel目标端口已有服务监听",
-                        startTime,
-                        System.currentTimeMillis());
+                if (!RedisCheckUtil.isSentinelServer(
+                        agentProperties.getSentinel().getHost(),
+                        agentProperties.getSentinel().getPort(),
+                        agentProperties.getSentinel().getPassword(),
+                        agentProperties.getSentinel().getTimeout())) {
+                    return OperationResultDTO.failure(
+                            OperationErrorCode.PORT_OCCUPIED,
+                            "Sentinel目标端口已被其他服务占用",
+                            startTime,
+                            System.currentTimeMillis());
+                }
             }
 
             // 遍历预检查要求存在的所有Shell脚本。

@@ -30,7 +30,7 @@ class PrecheckHostTaskTest {
         AgentTaskServiceImpl tasks = new AgentTaskServiceImpl(checking,
                 mock(StopRedisService.class), mock(StartRedisService.class),
                 mock(StopSentinelService.class), mock(StartSentinelService.class),
-                mock(RestoreConfigService.class), mock(com.icbc.nbfh.service.RecoveryTopologyVerifyService.class),
+                mock(RestoreConfigService.class), mock(com.icbc.nbfh.service.TopologyVerifyService.class),
                 mock(DeployConfigService.class), mock(DeployVersionService.class), mock(SwitchVersionService.class),
                 resultReports, registration);
         ThreadPoolExecutor worker = (ThreadPoolExecutor) ReflectionTestUtils.getField(tasks, "executor");

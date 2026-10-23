@@ -26,7 +26,7 @@ public final class ValidationConstants {
             "[0-9]+(?:\\.[0-9]+){1,3}(?:-[0-9A-Za-z.-]+)?"
     );
 
-    /** 上传安装包最大为50 MiB。 */
+    /** 上传Redis源码包最大为50 MiB。 */
     public static final long MAX_UPGRADE_PACKAGE_SIZE_BYTES =
             50L * 1024L * 1024L;
 
@@ -37,7 +37,7 @@ public final class ValidationConstants {
     /** 每份上传配置文件最大为1 MiB，按原始字节计算。 */
     public static final int MAX_CONFIG_FILE_SIZE_BYTES = 1024 * 1024;
 
-    /** 安装包原始文件名允许的最大长度。 */
+    /** 源码包原始文件名允许的最大长度。 */
     public static final int MAX_PACKAGE_FILE_NAME_LENGTH = 128;
 
 }

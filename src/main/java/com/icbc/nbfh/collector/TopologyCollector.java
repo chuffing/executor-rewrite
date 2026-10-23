@@ -1,8 +1,7 @@
 package com.icbc.nbfh.collector;
 
-import com.icbc.nbfh.common.constant.RedisProtocolConstants;
 import com.icbc.nbfh.config.AgentProperties;
-import com.icbc.nbfh.entity.DTO.RecoveryTopologySnapshotDTO;
+import com.icbc.nbfh.entity.DTO.TopologySnapshotDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -13,18 +12,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 采集本机Redis及Sentinel看到的故障恢复拓扑。
+ * 采集本机Redis及Sentinel看到的当前拓扑。
  */
 @Component
 @RequiredArgsConstructor
-public class RecoveryTopologyCollector {
+public class TopologyCollector {
 
     private final AgentProperties agentProperties;
 
     /**
      * 采集一次拓扑快照，不在采集器内部等待或重试。
      */
-    public RecoveryTopologySnapshotDTO collect() {
+    public TopologySnapshotDTO collect() {
 
         // ======== 1. 获取Redis和Sentinel连接配置 ========
 
@@ -58,11 +57,11 @@ public class RecoveryTopologyCollector {
 
             // ======== 3. 检查Redis和Sentinel是否正常响应 ========
 
-            if (!RedisProtocolConstants.PONG.equalsIgnoreCase(redis.ping())) {
+            if (!"PONG".equalsIgnoreCase(redis.ping())) {
                 throw new IllegalStateException("本机Redis未正常响应PING");
             }
 
-            if (!RedisProtocolConstants.PONG.equalsIgnoreCase(sentinel.ping())) {
+            if (!"PONG".equalsIgnoreCase(sentinel.ping())) {
                 throw new IllegalStateException("本机Sentinel未正常响应PING");
             }
 
@@ -129,7 +128,7 @@ public class RecoveryTopologyCollector {
     /**
      * 将Redis和Sentinel原始信息转换为结构化拓扑快照。
      */
-    private RecoveryTopologySnapshotDTO buildSnapshot(
+    private TopologySnapshotDTO buildSnapshot(
             Map<String, String> replicationInfo,
             Map<String, String> serverInfo,
             Map<String, String> sentinelMaster,
@@ -138,8 +137,8 @@ public class RecoveryTopologyCollector {
 
         // ======== 1. 创建拓扑快照对象 ========
 
-        RecoveryTopologySnapshotDTO snapshot =
-                new RecoveryTopologySnapshotDTO();
+        TopologySnapshotDTO snapshot =
+                new TopologySnapshotDTO();
 
         // ======== 2. 填充本机Redis信息 ========
 

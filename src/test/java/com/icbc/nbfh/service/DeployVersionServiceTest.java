@@ -21,7 +21,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-/** 部署服务只调用假脚本，不执行真实程序或操作current。 */
+/** 源码编译部署服务只调用假脚本，不执行真实编译或操作current。 */
 class DeployVersionServiceTest {
 
     @TempDir
@@ -46,6 +46,7 @@ class DeployVersionServiceTest {
         AgentProperties properties = new AgentProperties();
         properties.getOperation().setInstallDir(versions.toString());
         properties.getOperation().setCurrentDir(root.resolve("current").toString());
+        properties.getOperation().setVersionDeployTimeoutSeconds(1800);
         scripts = mock(FixedScriptExecutor.class);
         packageService = mock(VersionPackageService.class);
         service = new DeployVersionServiceImpl(scripts, properties, packageService);
@@ -65,7 +66,7 @@ class DeployVersionServiceTest {
         });
         OperationResultDTO result = service.deployVersion(params);
         assertTrue(result.isSuccess());
-        verify(scripts).executeScript(ScriptType.DEPLOY_VERSION, 10,
+        verify(scripts).executeScript(ScriptType.DEPLOY_VERSION, 1800,
                 packageFile.toString(), "6.2.19", versions.toAbsolutePath().toString());
         verify(packageService).deleteStagedPackage(packageFile);
         assertFalse(Files.exists(root.resolve("current")));
@@ -120,7 +121,7 @@ class DeployVersionServiceTest {
         assertTrue(service.deployVersion(params).isSuccess());
     }
 
-    /** 安装包不存在或是目录时，不计算摘要、不执行脚本。 */
+    /** 源码包不存在或是目录时，不计算摘要、不执行脚本。 */
     @Test
     void shouldRejectMissingOrNonRegularPackage() throws Exception {
         Files.delete(packageFile);

@@ -1,29 +1,41 @@
 package com.icbc.nbfh.service.impl;
 
-import com.icbc.nbfh.collector.RecoveryTopologyCollector;
+import com.icbc.nbfh.collector.TopologyCollector;
 import com.icbc.nbfh.common.Enum.OperationErrorCode;
-import com.icbc.nbfh.common.constant.RecoveryTopologyConstants;
+import com.icbc.nbfh.common.constant.TopologyConstants;
+import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
-import com.icbc.nbfh.entity.DTO.RecoveryTopologySnapshotDTO;
-import com.icbc.nbfh.service.RecoveryTopologyVerifyService;
+import com.icbc.nbfh.entity.DTO.TopologySnapshotDTO;
+import com.icbc.nbfh.service.TopologyVerifyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 故障恢复拓扑验收服务实现。
+ * Redis和Sentinel拓扑验收服务实现。
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class RecoveryTopologyVerifyServiceImpl
-        implements RecoveryTopologyVerifyService {
+public class TopologyVerifyServiceImpl
+        implements TopologyVerifyService {
 
-    private final RecoveryTopologyCollector recoveryTopologyCollector;
+    private final TopologyCollector topologyCollector;
 
     private final AgentProperties agentProperties;
 
@@ -32,6 +44,14 @@ public class RecoveryTopologyVerifyServiceImpl
      */
     @Override
     public OperationResultDTO verifyTopology() {
+        return verifyTopology(Collections.<String, String>emptyMap());
+    }
+
+    /**
+     * 重复采集拓扑，并按任务中的可选期望值核对主节点和本机角色。
+     */
+    @Override
+    public OperationResultDTO verifyTopology(Map<String, String> params) {
 
         // ======== 1. 初始化超时参数 ========
 
@@ -62,19 +82,34 @@ public class RecoveryTopologyVerifyServiceImpl
             try {
 
                 // 采集本机Redis和Sentinel看到的拓扑信息。
-                RecoveryTopologySnapshotDTO snapshot =
-                        recoveryTopologyCollector.collect();
+                TopologySnapshotDTO snapshot =
+                        topologyCollector.collect();
 
                 // 校验拓扑，返回null表示通过。
                 // 返回字符串表示未通过的原因。
                 lastFailureReason = validateSnapshot(snapshot);
 
+                // 首次初始化会传入用户选择的主节点和本机角色，
+                // 其他运维任务不传参数时保持原有验收规则。
+                if (lastFailureReason == null) {
+                    lastFailureReason = validateExpectedTopology(
+                            snapshot,
+                            params
+                    );
+                }
+
                 // ======== 3. 拓扑验收成功 ========
 
                 if (lastFailureReason == null) {
 
+                    // 拓扑验收通过已经证明本机Redis和Sentinel可用。
+                    // 只有新服务器的redisReady为false，需要持久化一次。
+                    if (!agentProperties.isRedisReady()) {
+                        markRedisReady();
+                    }
+
                     // 组装成功提示语。
-                    String message = "故障恢复拓扑验收通过，本机角色="
+                    String message = "拓扑验收通过，本机Redis角色="
                             + snapshot.getRedisRole()
                             + "，主节点="
                             + snapshot.getSentinelMasterHost()
@@ -100,7 +135,7 @@ public class RecoveryTopologyVerifyServiceImpl
                 lastFailureReason = e.getMessage();
 
                 log.warn(
-                        "故障恢复拓扑采集暂未通过：{}",
+                        "拓扑采集暂未通过：{}",
                         lastFailureReason
                 );
             }
@@ -130,7 +165,7 @@ public class RecoveryTopologyVerifyServiceImpl
                 // 返回验收被中断的失败结果。
                 return OperationResultDTO.failure(
                         OperationErrorCode.UNKNOWN_ERROR,
-                        "故障恢复拓扑验收被中断",
+                        "拓扑验收被中断",
                         startTime,
                         System.currentTimeMillis()
                 );
@@ -141,11 +176,129 @@ public class RecoveryTopologyVerifyServiceImpl
 
         return OperationResultDTO.failure(
                 OperationErrorCode.REPLICATION_FAILED,
-                "故障恢复拓扑未在规定时间内通过验收："
+                "Redis和Sentinel拓扑未在规定时间内通过验收："
                         + lastFailureReason,
                 startTime,
                 System.currentTimeMillis()
         );
+    }
+
+    /**
+     * 原子替换外置application.yml中的redisReady字段。
+     */
+    private void markRedisReady() {
+        Path configPath = Paths.get(agentProperties.getConfigFile())
+                .toAbsolutePath()
+                .normalize();
+        Path parent = configPath.getParent();
+        if (parent == null || !Files.isRegularFile(configPath)) {
+            throw new IllegalStateException(
+                    "执行器外置配置文件不存在：" + configPath
+            );
+        }
+
+        Path temporaryFile = null;
+        try {
+            List<String> originalLines = Files.readAllLines(
+                    configPath,
+                    StandardCharsets.UTF_8
+            );
+            List<String> updatedLines = new ArrayList<>(originalLines);
+            int matchedLineCount = 0;
+            for (int index = 0; index < originalLines.size(); index++) {
+                String line = originalLines.get(index);
+                String trimmedLine = line.trim();
+                if (!trimmedLine.startsWith("redisReady:")) {
+                    continue;
+                }
+
+                int indentationLength = line.indexOf('r');
+                String indentation = indentationLength <= 0
+                        ? "" : line.substring(0, indentationLength);
+                updatedLines.set(index, indentation + "redisReady: true");
+                matchedLineCount++;
+            }
+            if (matchedLineCount != 1) {
+                throw new IllegalStateException(
+                        "执行器配置中必须且只能存在一个redisReady字段"
+                );
+            }
+
+            temporaryFile = Files.createTempFile(
+                    parent,
+                    ".application-",
+                    ".yml"
+            );
+            Files.write(
+                    temporaryFile,
+                    updatedLines,
+                    StandardCharsets.UTF_8
+            );
+            try {
+                Files.move(
+                        temporaryFile,
+                        configPath,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING
+                );
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(
+                        temporaryFile,
+                        configPath,
+                        StandardCopyOption.REPLACE_EXISTING
+                );
+            }
+            agentProperties.setRedisReady(true);
+
+        } catch (IOException exception) {
+            throw new IllegalStateException(
+                    "更新执行器redisReady配置失败："
+                            + exception.getMessage(),
+                    exception
+            );
+        } finally {
+            if (temporaryFile != null) {
+                try {
+                    Files.deleteIfExists(temporaryFile);
+                } catch (IOException exception) {
+                    log.warn("清理redisReady临时配置文件失败：{}",
+                            temporaryFile);
+                }
+            }
+        }
+    }
+
+    /**
+     * 校验实际拓扑是否与平台本次选择一致。
+     */
+    private String validateExpectedTopology(
+            TopologySnapshotDTO snapshot,
+            Map<String, String> params) {
+        if (params == null || params.isEmpty()) {
+            return null;
+        }
+
+        String expectedMasterHostIp = params.get(
+                TaskParamConstants.EXPECTED_MASTER_HOST_IP
+        );
+        if (StringUtils.hasText(expectedMasterHostIp)
+                && !expectedMasterHostIp.equals(
+                snapshot.getSentinelMasterHost())) {
+            return "Sentinel识别的主节点与平台选择的主节点不一致";
+        }
+
+        String expectedRole = params.get(TaskParamConstants.EXPECTED_ROLE);
+        String actualRole = snapshot.getRedisRole();
+        if ("MASTER".equalsIgnoreCase(expectedRole)
+                && !"master".equalsIgnoreCase(actualRole)) {
+            return "本机Redis实际角色不是平台选择的主节点";
+        }
+        if ("REPLICA".equalsIgnoreCase(expectedRole)
+                && !"replica".equalsIgnoreCase(actualRole)
+                && !"slave".equalsIgnoreCase(actualRole)) {
+            return "本机Redis实际角色不是平台选择的从节点";
+        }
+        return null;
     }
 
 
@@ -156,13 +309,13 @@ public class RecoveryTopologyVerifyServiceImpl
      * 返回字符串：验收未通过的原因。
      */
     private String validateSnapshot(
-            RecoveryTopologySnapshotDTO snapshot) {
+            TopologySnapshotDTO snapshot) {
 
         // ======== 1. 校验Sentinel识别的从节点数量 ========
 
         // 三台Redis应当是一主两从。
         if (snapshot.getSentinelReplicaCount()
-                != RecoveryTopologyConstants.EXPECTED_REPLICA_COUNT) {
+                != TopologyConstants.EXPECTED_REPLICA_COUNT) {
 
             return "Sentinel识别出的从节点数量不是2";
         }
@@ -171,7 +324,7 @@ public class RecoveryTopologyVerifyServiceImpl
 
         // 每台Sentinel应当识别另外两台Sentinel。
         if (snapshot.getSentinelOtherCount()
-                != RecoveryTopologyConstants.EXPECTED_OTHER_SENTINEL_COUNT) {
+                != TopologyConstants.EXPECTED_OTHER_SENTINEL_COUNT) {
 
             return "Sentinel识别出的其他Sentinel数量不是2";
         }
@@ -218,7 +371,7 @@ public class RecoveryTopologyVerifyServiceImpl
 
             // Master必须连接两个从节点。
             if (snapshot.getConnectedReplicas()
-                    != RecoveryTopologyConstants.EXPECTED_REPLICA_COUNT) {
+                    != TopologyConstants.EXPECTED_REPLICA_COUNT) {
 
                 return "Redis主节点已连接的从节点数量不是2";
             }

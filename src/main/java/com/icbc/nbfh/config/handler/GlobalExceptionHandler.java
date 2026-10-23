@@ -1,7 +1,7 @@
 package com.icbc.nbfh.config.handler;
 
-import cn.hutool.http.HttpStatus;
 import com.icbc.nbfh.common.ResultBean;
+import com.icbc.nbfh.common.Enum.AgentTaskResponseCodeEnum;
 import com.icbc.nbfh.common.exception.ParameterException;
 import com.icbc.nbfh.common.Enum.ParameterErrorCode;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -30,7 +30,7 @@ public class GlobalExceptionHandler {
 
         return ResultBean.resultBean(
                 result,
-                HttpStatus.HTTP_BAD_REQUEST,
+                AgentTaskResponseCodeEnum.PARAMETER_REJECTED.getCode(),
                 result.getMsg()
         );
     }
@@ -49,7 +49,7 @@ public class GlobalExceptionHandler {
 
         return ResultBean.resultBean(
                 result,
-                HttpStatus.HTTP_ENTITY_TOO_LARGE,
+                AgentTaskResponseCodeEnum.PAYLOAD_TOO_LARGE.getCode(),
                 result.getMsg()
         );
     }

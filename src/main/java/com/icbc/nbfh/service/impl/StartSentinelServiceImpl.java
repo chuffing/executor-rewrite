@@ -45,16 +45,20 @@ public class StartSentinelServiceImpl implements StartSentinelService {
             );
         }
 
+        AgentProperties.SentinelConfig sentinelConfig =
+                agentProperties.getSentinel();
+
         // 脚本执行结果。
         CommandResultDTO commandResult;
 
-        // 将已有的current路径传给启动脚本。
+        // 1. 启动脚本会先判断Sentinel是否已经处于运行状态。
         try {
             commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.START_SENTINEL,
                     agentProperties.getOperation().getScriptTimeoutSeconds(),
                     agentProperties.getOperation().getCurrentDir()
             );
+
         } catch (FileNotFoundException e) {
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_NOT_FOUND,
@@ -62,6 +66,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
                     startTime,
                     System.currentTimeMillis()
             );
+
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
 
@@ -71,6 +76,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
                     startTime,
                     System.currentTimeMillis()
             );
+
         } catch (IOException e) {
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_EXECUTION_FAILED,
@@ -82,6 +88,9 @@ public class StartSentinelServiceImpl implements StartSentinelService {
 
         // 判断脚本是否执行超时。
         if (commandResult.isTimedOut()) {
+            if (isSentinelRunning(sentinelConfig)) {
+                return waitForSentinelAfterScript(startTime, serviceName.trim());
+            }
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_TIMEOUT,
                     "Sentinel启动脚本执行超时",
@@ -92,6 +101,9 @@ public class StartSentinelServiceImpl implements StartSentinelService {
 
         // 判断脚本退出码。
         if (commandResult.getExitCode() != 0) {
+            if (isSentinelRunning(sentinelConfig)) {
+                return waitForSentinelAfterScript(startTime, serviceName.trim());
+            }
             return OperationResultDTO.failure(
                     OperationErrorCode.COMMAND_EXECUTION_FAILED,
                     "Sentinel启动脚本执行失败",
@@ -166,6 +178,40 @@ public class StartSentinelServiceImpl implements StartSentinelService {
                 startTime,
                 System.currentTimeMillis()
         );
+    }
+
+    /**
+     * 检查Sentinel进程是否已经正常运行。
+     */
+    private boolean isSentinelRunning(
+            AgentProperties.SentinelConfig sentinelConfig) {
+
+        return RedisCheckUtil.isSentinelServer(
+                sentinelConfig.getHost(),
+                sentinelConfig.getPort(),
+                sentinelConfig.getPassword(),
+                sentinelConfig.getTimeout()
+        );
+    }
+
+    /**
+     * 脚本虽然返回异常，但Sentinel已经运行时继续检查最终状态。
+     */
+    private OperationResultDTO waitForSentinelAfterScript(
+            long startTime,
+            String serviceName) {
+
+        try {
+            return waitForStarted(startTime, serviceName);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return OperationResultDTO.failure(
+                    OperationErrorCode.UNKNOWN_ERROR,
+                    "等待Sentinel启动时被中断",
+                    startTime,
+                    System.currentTimeMillis()
+            );
+        }
     }
 
 }

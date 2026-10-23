@@ -1,6 +1,5 @@
 package com.icbc.nbfh.util;
 
-import com.icbc.nbfh.common.constant.RedisProtocolConstants;
 import org.springframework.util.StringUtils;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.exceptions.JedisException;
@@ -35,12 +34,47 @@ public final class RedisCheckUtil {
                 password,
                 timeout
         )) {
-            return RedisProtocolConstants.PONG
+            return "PONG"
                     .equalsIgnoreCase(jedis.ping());
 
         } catch (JedisException e) {
             return false;
         }
+    }
+
+    /**
+     * 检查端口上运行的是否为普通Redis服务。
+     */
+    public static boolean isRedisServer(String host,
+                                        int port,
+                                        String password,
+                                        int timeout) {
+
+        return hasRedisMode(
+                host,
+                port,
+                password,
+                timeout,
+                "standalone",
+                "cluster"
+        );
+    }
+
+    /**
+     * 检查端口上运行的是否为Sentinel服务。
+     */
+    public static boolean isSentinelServer(String host,
+                                           int port,
+                                           String password,
+                                           int timeout) {
+
+        return hasRedisMode(
+                host,
+                port,
+                password,
+                timeout,
+                "sentinel"
+        );
     }
 
     /**
@@ -59,7 +93,7 @@ public final class RedisCheckUtil {
                 password,
                 timeout
         )) {
-            if (!RedisProtocolConstants.PONG
+            if (!"PONG"
                     .equalsIgnoreCase(jedis.ping())) {
                 return false;
             }
@@ -157,6 +191,52 @@ public final class RedisCheckUtil {
         } catch (JedisException e) {
             jedis.close();
             throw e;
+        }
+    }
+
+    /**
+     * 读取INFO server中的redis_mode，确认端口上的服务类型。
+     */
+    private static boolean hasRedisMode(String host,
+                                        int port,
+                                        String password,
+                                        int timeout,
+                                        String... expectedModes) {
+
+        try (Jedis jedis = createAuthenticatedJedis(
+                host,
+                port,
+                password,
+                timeout
+        )) {
+            if (!"PONG"
+                    .equalsIgnoreCase(jedis.ping())) {
+                return false;
+            }
+
+            String serverInfo = jedis.info("server");
+            if (!StringUtils.hasText(serverInfo)) {
+                return false;
+            }
+
+            String[] lines = serverInfo.replace("\r", "").split("\n");
+            for (String line : lines) {
+                if (!line.startsWith("redis_mode:")) {
+                    continue;
+                }
+
+                String actualMode = line.substring("redis_mode:".length()).trim();
+                for (String expectedMode : expectedModes) {
+                    if (expectedMode.equalsIgnoreCase(actualMode)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            return false;
+
+        } catch (JedisException e) {
+            return false;
         }
     }
 

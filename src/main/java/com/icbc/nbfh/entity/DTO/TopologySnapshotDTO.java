@@ -3,10 +3,10 @@ package com.icbc.nbfh.entity.DTO;
 import lombok.Data;
 
 /**
- * 单次采集到的故障恢复拓扑快照。
+ * 单次采集到的Redis和Sentinel拓扑快照。
  */
 @Data
-public class RecoveryTopologySnapshotDTO {
+public class TopologySnapshotDTO {
 
     /** 本机Redis角色。 */
     private String redisRole;

@@ -25,9 +25,6 @@ public final class TaskResultConstants {
     /** 本地结果临时文件后缀。 */
     public static final String TEMP_FILE_SUFFIX = ".tmp";
 
-    /** 本地保存的错误信息最大长度。 */
-    public static final int MAX_ERROR_MESSAGE_LENGTH = 1000;
-
     /** 工具类不允许实例化。 */
     private TaskResultConstants() {
     }

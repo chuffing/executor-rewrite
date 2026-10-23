@@ -10,6 +10,9 @@ import com.icbc.nbfh.service.impl.StartRedisServiceImpl;
 import com.icbc.nbfh.service.impl.StartSentinelServiceImpl;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.net.ServerSocket;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -23,6 +26,7 @@ class StartServiceTest {
     void shouldPassCurrentDirToRedisScript() throws Exception {
         AgentProperties properties = new AgentProperties();
         properties.getOperation().setCurrentDir("/srv/custom redis/current");
+        properties.getRedis().setPort(findUnusedPort());
         FixedScriptExecutor scripts = mock(FixedScriptExecutor.class);
         when(scripts.executeScript(ScriptType.START_REDIS, 10, "/srv/custom redis/current"))
                 .thenReturn(new CommandResultDTO(1, "", "current无效", false));
@@ -39,6 +43,7 @@ class StartServiceTest {
         AgentProperties properties = new AgentProperties();
         properties.getOperation().setCurrentDir("/srv/custom redis/current");
         properties.getSentinel().setServiceName("test-master");
+        properties.getSentinel().setPort(findUnusedPort());
         FixedScriptExecutor scripts = mock(FixedScriptExecutor.class);
         when(scripts.executeScript(ScriptType.START_SENTINEL, 10, "/srv/custom redis/current"))
                 .thenReturn(new CommandResultDTO(1, "", "current无效", false));
@@ -47,5 +52,12 @@ class StartServiceTest {
 
         verify(scripts).executeScript(ScriptType.START_SENTINEL, 10, "/srv/custom redis/current");
         assertEquals(OperationErrorCode.COMMAND_EXECUTION_FAILED, result.getErrorCode());
+    }
+
+    /** 获取一个当前没有服务监听的本机端口。 */
+    private int findUnusedPort() throws IOException {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        }
     }
 }
