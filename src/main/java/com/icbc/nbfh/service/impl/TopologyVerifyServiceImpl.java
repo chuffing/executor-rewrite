@@ -3,7 +3,6 @@ package com.icbc.nbfh.service.impl;
 import com.icbc.nbfh.collector.TopologyCollector;
 import com.icbc.nbfh.common.Enum.OperationErrorCode;
 import com.icbc.nbfh.common.constant.TopologyConstants;
-import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.entity.DTO.TopologySnapshotDTO;
@@ -13,7 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -30,10 +28,10 @@ public class TopologyVerifyServiceImpl
     private final AgentProperties agentProperties;
 
     /**
-     * 重复采集拓扑，并按任务中的可选期望值核对主节点和本机角色。
+     * 重复采集拓扑，直到当前运行拓扑通过验收。
      */
     @Override
-    public OperationResultDTO verifyTopology(Map<String, String> params) {
+    public OperationResultDTO verifyTopology() {
 
         long startTime = System.currentTimeMillis();
         long timeoutMillis = TimeUnit.SECONDS.toMillis(
@@ -52,7 +50,7 @@ public class TopologyVerifyServiceImpl
                         topologyCollector.collect();
 
                 // 返回null表示本次拓扑校验通过。
-                lastFailureReason = validateTopology(snapshot, params);
+                lastFailureReason = validateTopology(snapshot);
 
                 if (lastFailureReason == null) {
                     String message = "拓扑验收通过，本机Redis角色="
@@ -111,9 +109,7 @@ public class TopologyVerifyServiceImpl
      * 返回null：验收通过。
      * 返回字符串：验收未通过的原因。
      */
-    private String validateTopology(
-            TopologySnapshotDTO snapshot,
-            Map<String, String> params) {
+    private String validateTopology(TopologySnapshotDTO snapshot) {
 
         // 1. Sentinel必须识别出两台从节点和另外两台Sentinel。
         if (snapshot.getSentinelReplicaCount()
@@ -180,31 +176,6 @@ public class TopologyVerifyServiceImpl
 
         } else {
             return "本机Redis角色无法识别";
-        }
-
-        // 5. 服务器切换传入期望值时，检查主节点和本机角色。
-        if (params == null || params.isEmpty()) {
-            return null;
-        }
-
-        String expectedMasterHostIp = params.get(
-                TaskParamConstants.EXPECTED_MASTER_HOST_IP
-        );
-        if (StringUtils.hasText(expectedMasterHostIp)
-                && !expectedMasterHostIp.equals(
-                snapshot.getSentinelMasterHost())) {
-            return "Sentinel识别的主节点与平台选择的主节点不一致";
-        }
-
-        String expectedRole = params.get(TaskParamConstants.EXPECTED_ROLE);
-        if ("MASTER".equalsIgnoreCase(expectedRole)
-                && !"master".equalsIgnoreCase(role)) {
-            return "本机Redis实际角色不是平台选择的主节点";
-        }
-
-        if ("REPLICA".equalsIgnoreCase(expectedRole)
-                && !"replica".equalsIgnoreCase(role)) {
-            return "本机Redis实际角色不是平台选择的从节点";
         }
 
         return null;

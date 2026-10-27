@@ -14,7 +14,6 @@ import java.io.Serializable;
  * @param <T> 响应数据类型
  */
 @Accessors(chain = true)
-@AllArgsConstructor
 public class ResultBean<T> implements Serializable {
 
     private static final long serialVersionUID = 1L;

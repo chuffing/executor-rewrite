@@ -109,9 +109,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     break;
 
                 case VERIFY_TOPOLOGY:
-                    result = topologyVerifyService.verifyTopology(
-                            task.getParams()
-                    );
+                    result = topologyVerifyService.verifyTopology();
 
                     // 新服务器拓扑验收成功后，允许执行器采集Redis数据。
                     if (result.isSuccess()) {
