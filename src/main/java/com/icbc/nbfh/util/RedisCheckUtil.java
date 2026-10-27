@@ -186,7 +186,10 @@ public final class RedisCheckUtil {
         Jedis jedis = new Jedis(host, port, timeout);
 
         try {
-            jedis.auth(password);
+            // 未配置密码时跳过 AUTH，兼容无密码 Redis/Sentinel。
+            if (StringUtils.hasText(password)) {
+                jedis.auth(password);
+            }
             return jedis;
 
         } catch (JedisException e) {

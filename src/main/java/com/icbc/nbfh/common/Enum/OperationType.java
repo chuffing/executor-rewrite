@@ -54,10 +54,5 @@ public enum OperationType {
     /**
      * 版本切换。
      */
-    SWITCH_VERSION,
-
-    /**
-     * 回滚版本。
-     */
-    ROLLBACK_VERSION
+    SWITCH_VERSION
 }

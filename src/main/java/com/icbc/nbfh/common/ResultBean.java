@@ -1,7 +1,6 @@
 package com.icbc.nbfh.common;
 
 import cn.hutool.http.HttpStatus;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;

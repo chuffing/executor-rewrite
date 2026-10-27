@@ -2,38 +2,16 @@ package com.icbc.nbfh.entity.DTO;
 
 import lombok.Data;
 
-import java.util.Map;
-
 /**
- * 心跳请求
+ * 心跳请求，字段与平台端AgentHeartbeatRequest对应
+ * 平台端通过 token 定位执行器，并校验 hostIp + executorPort 与注册时一致
  */
 @Data
 public class HeartbeatRequestDTO {
 
-    /** Agent 身份 token（注册后获得） */
-    private String token;
+    /** 执行器所在服务器 IP */
+    private String hostIp;
 
-    /** Agent ID */
-    private String agentId;
-
-    /** 当前运行状态 */
-    private String status;
-
-    /** 主机名 */
-    private String hostname;
-
-    /** IP 地址 */
-    private String ip;
-
-    /** CPU 使用率 */
-    private String cpuUsage;
-
-    /** 内存使用率 */
-    private String memUsage;
-
-    /** 上次采集时间戳 */
-    private Long lastCollectTime;
-
-    /** 扩展信息 */
-    private Map<String, String> extra;
+    /** 执行器 HTTP 服务端口 */
+    private String executorPort;
 }

@@ -70,18 +70,13 @@ public class AgentTaskController {
         }
 
         // 接收平台任务并提交到执行线程。
-        agentTaskService.submitTask(request);
+        try {
+            agentTaskService.submitTask(request);
+        } catch (RejectedExecutionException e) {
+            return busyResult(request.getTaskNo());
+        }
 
-        // 创建任务接收响应体。
-        TaskSubmitResultVO result = new TaskSubmitResultVO(
-                request.getTaskNo(),
-                "任务已接收"
-        );
-
-        return new ResultBean<>(
-                HttpStatus.ACCEPTED.value(),
-                result.getMessage(),
-                result);
+        return acceptedResult(request.getTaskNo());
     }
 
     /**
@@ -138,20 +133,15 @@ public class AgentTaskController {
 
         try {
             agentTaskService.submitTask(request);
+        } catch (RejectedExecutionException e) {
+            versionPackageService.deleteStagedPackage(packagePath);
+            return busyResult(request.getTaskNo());
         } catch (RuntimeException e) {
             versionPackageService.deleteStagedPackage(packagePath);
             throw e;
         }
 
-        TaskSubmitResultVO result = new TaskSubmitResultVO(
-                request.getTaskNo(),
-                "任务已接收"
-        );
-
-        return new ResultBean<>(
-                HttpStatus.ACCEPTED.value(),
-                result.getMessage(),
-                result);
+        return acceptedResult(request.getTaskNo());
     }
 
     /**
@@ -200,19 +190,37 @@ public class AgentTaskController {
 
         try {
             agentTaskService.submitTask(request);
+        } catch (RejectedExecutionException e) {
+            configFileService.deleteStagedFiles(directory);
+            return busyResult(request.getTaskNo());
         } catch (RuntimeException e) {
             configFileService.deleteStagedFiles(directory);
             throw e;
         }
 
-        TaskSubmitResultVO result = new TaskSubmitResultVO(
-                request.getTaskNo(),
-                "任务已接收"
-        );
-
-        return new ResultBean<>(HttpStatus.ACCEPTED.value(), result.getMessage(), result);
+        return acceptedResult(request.getTaskNo());
     }
 
+
+    /** 任务被线程池接收。 */
+    private ResultBean<TaskSubmitResultVO> acceptedResult(String taskNo) {
+        String message = "任务已接收";
+        return new ResultBean<>(
+                HttpStatus.ACCEPTED.value(),
+                message,
+                new TaskSubmitResultVO(taskNo, TaskSubmitStatus.ACCEPTED.name(), message)
+        );
+    }
+
+    /** 执行器工作线程与等待队列均已满。 */
+    private ResultBean<TaskSubmitResultVO> busyResult(String taskNo) {
+        String message = "执行器繁忙，任务未接收";
+        return new ResultBean<>(
+                HttpStatus.SERVICE_UNAVAILABLE.value(),
+                message,
+                new TaskSubmitResultVO(taskNo, TaskSubmitStatus.BUSY.name(), message)
+        );
+    }
 
     /**
      * 校验平台下发的任务参数。
