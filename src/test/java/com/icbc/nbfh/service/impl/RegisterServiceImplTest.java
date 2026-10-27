@@ -1,196 +1,253 @@
 package com.icbc.nbfh.service.impl;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
+import com.icbc.nbfh.client.PlatformClient;
+import com.icbc.nbfh.collector.RedisInfoCollector;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.RegisterRequestDTO;
-import com.icbc.nbfh.client.PlatformClient;
+import com.icbc.nbfh.entity.DTO.RegisterResultDTO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * 两阶段注册：Redis 未就绪只注册执行器，Redis 就绪后二次注册并绑定实例
+ */
 class RegisterServiceImplTest {
 
     @TempDir
     Path tempDir;
 
     @Test
-    void shouldRegisterAndKeepCredentialInMemory() {
+    void shouldRegisterUnboundWhenRedisNotReady() throws Exception {
+        AgentProperties properties = createProperties();
+        PlatformClient platformClient = mock(PlatformClient.class);
+        RedisInfoCollector redisInfoCollector = mock(RedisInfoCollector.class);
 
-        // 1. 准备注册配置和平台返回数据。
-        AgentProperties properties =
-                createProperties();
+        when(redisInfoCollector.isRedisReady()).thenReturn(false);
+        when(platformClient.register(any(RegisterRequestDTO.class), any(String.class)))
+                .thenReturn(new RegisterResultDTO("token-001", "", false));
 
-        PlatformClient platformClient =
-                mock(PlatformClient.class);
+        RegisterServiceImpl service = new RegisterServiceImpl(
+                properties, platformClient, redisInfoCollector, 9101);
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("agentId", "agent-001");
-        data.put("token", "token-001");
+        assertTrue(service.registerIfNeeded());
+        assertTrue(service.isRegistered());
+        assertTrue(service.hasToken());
+        assertFalse(service.isBound());
+        assertNull(service.getInstanceId());
+        assertEquals("token-001", service.getToken());
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("data", data);
+        ArgumentCaptor<RegisterRequestDTO> captor =
+                ArgumentCaptor.forClass(RegisterRequestDTO.class);
+        verify(platformClient).register(captor.capture(),
+                eq("http://127.0.0.1:8100"));
+        RegisterRequestDTO request = captor.getValue();
+        assertEquals("register-code", request.getRegisterCode());
+        assertEquals("127.0.0.1", request.getHostIp());
+        assertEquals("9101", request.getExecutorPort());
+        assertEquals(Boolean.FALSE, request.getRedisReady());
+        assertNull(request.getRedisInfo());
 
-        when(platformClient.register(
-                any(RegisterRequestDTO.class),
-                eq("http://127.0.0.1:8100")
-        )).thenReturn(response);
+        // token 已落盘，且 bound=false 用于后续二次注册
+        String content = new String(Files.readAllBytes(
+                Paths.get(properties.getPlatform().getTokenFile())), StandardCharsets.UTF_8);
+        JSONObject state = JSON.parseObject(content);
+        assertEquals("token-001", state.getString("token"));
+        assertEquals("", state.getString("instanceId"));
+        assertFalse(state.getBooleanValue("bound"));
 
-        RegisterServiceImpl registerService =
-                new RegisterServiceImpl(
-                        properties,
-                        platformClient,
-                        9101
-                );
-
-        // 2. 执行注册。
-        assertTrue(registerService.registerIfNeeded());
-
-        // 3. 验证注册状态和凭证。
-        assertTrue(registerService.isRegistered());
-
-        assertEquals(
-                "agent-001",
-                registerService.getAgentId()
-        );
-
-        assertEquals(
-                "token-001",
-                registerService.getToken()
-        );
-
-        // 4. 再次调用时不能重复请求平台。
-        assertTrue(registerService.registerIfNeeded());
-
-        verify(platformClient).register(
-                any(RegisterRequestDTO.class),
-                eq("http://127.0.0.1:8100")
-        );
+        // 30s 内重复调用不能再次请求平台
+        assertTrue(service.registerIfNeeded());
+        verify(platformClient, times(1)).register(any(RegisterRequestDTO.class), any(String.class));
     }
 
     @Test
-    void shouldLoadCompleteLocalCredential()
-            throws Exception {
+    void shouldRegisterAgainAndBindWhenRedisBecomesReady() throws Exception {
+        AgentProperties properties = createProperties();
+        PlatformClient platformClient = mock(PlatformClient.class);
+        RedisInfoCollector redisInfoCollector = mock(RedisInfoCollector.class);
 
-        // 1. 准备本地凭证文件。
-        AgentProperties properties =
-                createProperties();
+        when(redisInfoCollector.isRedisReady()).thenReturn(false);
+        when(platformClient.register(any(RegisterRequestDTO.class), any(String.class)))
+                .thenReturn(new RegisterResultDTO("token-001", "", false));
 
-        Files.write(
-                Paths.get(
-                        properties.getPlatform()
-                                .getTokenFile()
-                ),
-                "agent-local|token-local"
-                        .getBytes(StandardCharsets.UTF_8)
-        );
+        RegisterServiceImpl service = new RegisterServiceImpl(
+                properties, platformClient, redisInfoCollector, 9101);
+        assertTrue(service.registerIfNeeded());
+        assertFalse(service.isBound());
 
-        PlatformClient platformClient =
-                mock(PlatformClient.class);
+        // 模拟 Redis 恢复，并等待注册重试间隔（实现下限 1s）
+        Map<String, String> redisInfo = new LinkedHashMap<>();
+        redisInfo.put("host", "127.0.0.1");
+        redisInfo.put("tcp_port", "6379");
+        redisInfo.put("role", "MASTER");
+        redisInfo.put("version", "7.2.4");
+        redisInfo.put("run_id", "0123456789abcdef0123456789abcdef01234567");
+        when(redisInfoCollector.isRedisReady()).thenReturn(true);
+        when(redisInfoCollector.collectRegistrationInfo()).thenReturn(redisInfo);
+        when(platformClient.register(any(RegisterRequestDTO.class), any(String.class)))
+                .thenReturn(new RegisterResultDTO("token-001", "instance-001", true));
 
-        RegisterServiceImpl registerService =
-                new RegisterServiceImpl(
-                        properties,
-                        platformClient,
-                        9101
-                );
+        Thread.sleep(1100L);
+        assertTrue(service.registerIfNeeded());
+        assertTrue(service.isBound());
+        assertEquals("instance-001", service.getInstanceId());
 
-        // 2. 从本地文件恢复注册状态。
-        assertTrue(registerService.registerIfNeeded());
-        assertTrue(registerService.isRegistered());
-
-        assertEquals(
-                "agent-local",
-                registerService.getAgentId()
-        );
-
-        assertEquals(
-                "token-local",
-                registerService.getToken()
-        );
-
-        // 3. 已有本地凭证时不请求平台注册。
-        verify(platformClient, never()).register(
-                any(RegisterRequestDTO.class),
-                any(String.class)
-        );
+        ArgumentCaptor<RegisterRequestDTO> captor =
+                ArgumentCaptor.forClass(RegisterRequestDTO.class);
+        verify(platformClient, times(2)).register(captor.capture(), any(String.class));
+        RegisterRequestDTO second = captor.getAllValues().get(1);
+        assertEquals(Boolean.TRUE, second.getRedisReady());
+        assertEquals("6379", second.getRedisInfo().get("tcp_port"));
+        assertEquals("MASTER", second.getRedisInfo().get("role"));
     }
 
     @Test
-    void shouldRejectCredentialWhenPlatformUrlMissing()
-            throws Exception {
+    void shouldLoadBoundCredentialAndSkipPlatform() throws Exception {
+        AgentProperties properties = createProperties();
+        writeState(properties, "127.0.0.1", "9101", "instance-local", true);
 
-        // 1. 即使本地有凭证，也必须配置平台地址。
-        AgentProperties properties =
-                createProperties();
+        PlatformClient platformClient = mock(PlatformClient.class);
+        RedisInfoCollector redisInfoCollector = mock(RedisInfoCollector.class);
 
+        RegisterServiceImpl service = new RegisterServiceImpl(
+                properties, platformClient, redisInfoCollector, 9101);
+
+        assertTrue(service.registerIfNeeded());
+        assertTrue(service.isBound());
+        assertEquals("instance-local", service.getInstanceId());
+        assertEquals("127.0.0.1:9101", service.getAgentId());
+        verify(platformClient, never()).register(any(RegisterRequestDTO.class), any(String.class));
+    }
+
+    @Test
+    void shouldReRegisterWhenSavedAddressChanged() throws Exception {
+        AgentProperties properties = createProperties();
+        writeState(properties, "10.0.0.9", "9101", "instance-old", true);
+
+        PlatformClient platformClient = mock(PlatformClient.class);
+        RedisInfoCollector redisInfoCollector = mock(RedisInfoCollector.class);
+        when(redisInfoCollector.isRedisReady()).thenReturn(false);
+        when(platformClient.register(any(RegisterRequestDTO.class), any(String.class)))
+                .thenReturn(new RegisterResultDTO("token-new", "", false));
+
+        RegisterServiceImpl service = new RegisterServiceImpl(
+                properties, platformClient, redisInfoCollector, 9101);
+
+        assertTrue(service.registerIfNeeded());
+        assertFalse(service.isBound());
+        assertEquals("token-new", service.getToken());
+        verify(platformClient).register(any(RegisterRequestDTO.class),
+                eq("http://127.0.0.1:8100"));
+    }
+
+    @Test
+    void shouldReadLegacyCredentialAndReRegisterBinding() throws Exception {
+        AgentProperties properties = createProperties();
+        Path tokenFile = Paths.get(properties.getPlatform().getTokenFile());
+        Files.createDirectories(tokenFile.getParent());
+        Files.write(tokenFile,
+                "legacy-agent|legacy-token".getBytes(StandardCharsets.UTF_8));
+
+        PlatformClient platformClient = mock(PlatformClient.class);
+        RedisInfoCollector redisInfoCollector = mock(RedisInfoCollector.class);
+        when(redisInfoCollector.isRedisReady()).thenReturn(false);
+        when(platformClient.register(any(RegisterRequestDTO.class), any(String.class)))
+                .thenReturn(new RegisterResultDTO("legacy-token", "", false));
+
+        RegisterServiceImpl service = new RegisterServiceImpl(
+                properties, platformClient, redisInfoCollector, 9101);
+
+        assertTrue(service.registerIfNeeded());
+        assertTrue(service.hasToken());
+        assertFalse(service.isBound());
+        verify(platformClient).register(any(RegisterRequestDTO.class), any(String.class));
+    }
+
+    @Test
+    void shouldRejectWhenPlatformUrlMissing() throws Exception {
+        AgentProperties properties = createProperties();
         properties.getPlatform().setUrl(" ");
+        writeState(properties, "127.0.0.1", "9101", "instance-local", true);
 
-        Files.write(
-                Paths.get(
-                        properties.getPlatform()
-                                .getTokenFile()
-                ),
-                "agent-local|token-local"
-                        .getBytes(StandardCharsets.UTF_8)
-        );
+        PlatformClient platformClient = mock(PlatformClient.class);
+        RedisInfoCollector redisInfoCollector = mock(RedisInfoCollector.class);
 
-        PlatformClient platformClient =
-                mock(PlatformClient.class);
+        RegisterServiceImpl service = new RegisterServiceImpl(
+                properties, platformClient, redisInfoCollector, 9101);
 
-        RegisterServiceImpl registerService =
-                new RegisterServiceImpl(
-                        properties,
-                        platformClient,
-                        9101
-                );
+        assertFalse(service.registerIfNeeded());
+        assertFalse(service.isRegistered());
+        verify(platformClient, never()).register(any(RegisterRequestDTO.class), any(String.class));
+    }
 
-        // 2. 平台地址无效时不能建立注册状态。
-        assertFalse(registerService.registerIfNeeded());
-        assertFalse(registerService.isRegistered());
+    @Test
+    void shouldInvalidateTokenAndDeleteFile() throws Exception {
+        AgentProperties properties = createProperties();
+        writeState(properties, "127.0.0.1", "9101", "instance-local", true);
 
-        verify(platformClient, never()).register(
-                any(RegisterRequestDTO.class),
-                any(String.class)
-        );
+        RegisterServiceImpl service = new RegisterServiceImpl(
+                properties,
+                mock(PlatformClient.class),
+                mock(RedisInfoCollector.class),
+                9101);
+        assertTrue(service.registerIfNeeded());
+
+        service.invalidateToken();
+
+        assertFalse(service.isRegistered());
+        assertFalse(service.isBound());
+        assertFalse(Files.exists(Paths.get(properties.getPlatform().getTokenFile())));
     }
 
     private AgentProperties createProperties() {
-
-        AgentProperties properties =
-                new AgentProperties();
-
+        AgentProperties properties = new AgentProperties();
         properties.setAgentName("redis-agent");
-
-        properties.getPlatform().setUrl(
-                "http://127.0.0.1:8100"
-        );
-
-        properties.getPlatform().setRegisterCode(
-                "register-code"
-        );
-
+        properties.setHostIp("127.0.0.1");
+        properties.setRegisterRetryInterval(1000);
+        properties.getPlatform().setUrl("http://127.0.0.1:8100");
+        properties.getPlatform().setRegisterCode("register-code");
         properties.getPlatform().setTokenFile(
-                tempDir.resolve("agent-token.dat")
-                        .toString()
-        );
-
+                tempDir.resolve("agent-token.dat").toString());
+        properties.getRedis().setHost("127.0.0.1");
+        properties.getRedis().setPort(6379);
         return properties;
     }
+
+    private void writeState(AgentProperties properties,
+                            String hostIp,
+                            String executorPort,
+                            String instanceId,
+                            boolean bound) throws Exception {
+        JSONObject state = new JSONObject(true);
+        state.put("token", "token-local");
+        state.put("hostIp", hostIp);
+        state.put("executorPort", executorPort);
+        state.put("instanceId", instanceId);
+        state.put("bound", bound);
+        Path tokenFile = Paths.get(properties.getPlatform().getTokenFile());
+        Files.createDirectories(tokenFile.getParent());
+        Files.write(tokenFile, state.toJSONString().getBytes(StandardCharsets.UTF_8));
+    }
 }
-
-

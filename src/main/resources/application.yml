@@ -1,5 +1,6 @@
 server:
   port: ${SERVER_PORT:9101}
+  address: 0.0.0.0
 
 spring:
   servlet:
@@ -10,41 +11,76 @@ spring:
 
   application:
     name: redis-monitor-agent
+  task:
+    scheduling:
+      # 注册、心跳、采集、本地清理任务并行，避免一次网络超时阻塞其他任务
+      pool:
+        size: 5
+
 
 agent:
+  # 平台通信：地址、注册码、token 持久化文件
+  platform:
+    # 平台端地址，必须从生产服务器可访问，例如 http://10.0.0.10:8100
+    url: ${AGENT_PLATFORM_URL:${PLATFORM_URL:http://172.20.10.2:8100}}
+    # 平台预设注册码，需与平台端 platform.register-code 一致
+    register-code: ${REGISTER_CODE:Danuvius}
+    # 本地注册凭证文件，注册成功后保存，重启不重复注册
+    token-file: ${AGENT_TOKEN_FILE:${TOKEN_FILE:./agent-token.dat}}
+
+  # 建议每台服务器使用清晰且唯一的名称（仅用于日志/排查）
+  agent-name: ${AGENT_NAME:redis-monitor-agent}
+
+  # 执行器对平台可见的 IPv4，留空自动识别（优先默认路由网卡）
+  host-ip: ${AGENT_HOST_IP:}
 
   # 执行器外置配置文件；服务器切换成功后用于持久化redisReady。
   config-file: ${AGENT_CONFIG_FILE:./application.yml}
 
-  # true表示本机已有可采集的Redis和Sentinel。
-  # 新服务器预注册时需人工改为false。
+  # 部署意图标记：true表示本机应有可采集的Redis和Sentinel。
+  # 实际注册时执行器仍会 PING Redis 探测；连接异常时上传 redisReady=false。
   redisReady: true
 
-  # 执行器基础信息
-  agent-name: ${AGENT_NAME:}
+  # 未注册或已注册未绑定时的二次注册重试间隔（毫秒）
+  register-retry-interval: ${REGISTER_RETRY_INTERVAL:30000}
 
-  # 平台通信
-  platform:
-    url: ${AGENT_PLATFORM_URL:http://localhost:8100}
-    register-code: ${AGENT_REGISTER_CODE:}
-    # 本地注册凭证文件；相对路径基于Java工作目录，生产环境建议配置独立绝对路径。
-    token-file: ${AGENT_TOKEN_FILE:./agent-token.dat}
+  # 采集数据本地留存目录（上报失败时缓存，支持断点续传）
+  data-dir: ${DATA_DIR:./data}
+  # 本地留存数据保留天数
+  data-retain-days: ${DATA_RETAIN_DAYS:7}
+
+  # 运行日志目录
+  log-dir: ${LOG_DIR:./logs}
+  # 升级包下载临时目录
+  upgrade-dir: ${UPGRADE_DIR:/tmp/redis-upgrade/}
 
   # 定时任务
   schedule:
+    # 指标采集上报间隔：5 分钟
     collect-interval: ${AGENT_COLLECT_INTERVAL:300000}
+    # 心跳间隔：30 秒
     heartbeat-interval: ${AGENT_HEARTBEAT_INTERVAL:30000}
+    # 注册/二次注册重试间隔：30 秒
+    register-interval: ${AGENT_REGISTER_INTERVAL:30000}
+
+  # 首次注册延迟（毫秒）
+  register-initial-delay: ${AGENT_REGISTER_INITIAL_DELAY:5000}
 
   # 运维任务结果本地保存
   task-result:
     # 相对路径基于Java工作目录，生产环境建议配置独立绝对路径。
     directory: ${AGENT_TASK_RESULT_DIR:./task-results}
 
+  # 调用平台接口超时（毫秒）
+  http-connect-timeout: ${HTTP_CONNECT_TIMEOUT:5000}
+  http-read-timeout: ${HTTP_READ_TIMEOUT:10000}
+
   # Redis
   redis:
-    host: ${REDIS_HOST:127.0.0.1}
+#    host: ${REDIS_HOST:127.0.0.1}
+    host: ${REDIS_HOST:172.20.10.3}
     port: ${REDIS_PORT:6379}
-    password: ${REDIS_PASSWORD:}
+    password: ${REDIS_PASSWORD:20021227}
     db: ${REDIS_DB:0}
     # Redis连接超时，单位毫秒。
     timeout: ${REDIS_TIMEOUT:2000}
@@ -67,13 +103,21 @@ agent:
 
   # Sentinel
   sentinel:
-    host: ${SENTINEL_HOST:127.0.0.1}
+    # 是否采集 Sentinel 节点，随指标一次上报
+    enabled: ${SENTINEL_ENABLED:true}
+#    host: ${SENTINEL_HOST:127.0.0.1}
+    host: ${SENTINEL_HOST:172.20.10.3}
     port: ${SENTINEL_PORT:26379}
     password: ${SENTINEL_PASSWORD:}
+
+    # Sentinel监控的主从组名称，同时作为 SENTINEL sentinels 的 masterName
+    service-name: ${SENTINEL_SERVICE_NAME:${SENTINEL_MASTER_NAME:}}
+    # 多个地址用逗号分隔，例如 10.0.0.11:26379,10.0.0.12:26379,10.0.0.13:26379
+    # 为空时只使用上面的 host:port；任一可达即可发现全部哨兵
+    nodes: ${SENTINEL_NODES:}
+
     # Sentinel连接超时，单位毫秒。
     timeout: ${SENTINEL_TIMEOUT:2000}
-    # START_SENTINEL检查所用的主从组名称，须与sentinel.conf中的monitor名称一致。
-    service-name: ${SENTINEL_SERVICE_NAME:}
     # Sentinel正式配置文件，生产环境可通过环境变量覆盖。
     # 启动脚本也读取SENTINEL_CONFIG_FILE，配置文件须允许Sentinel正常重写。
     config-file: ${SENTINEL_CONFIG_FILE:/opt/redis/conf/sentinel.conf}

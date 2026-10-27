@@ -371,8 +371,10 @@ public class TopologyCollector {
 
         try {
 
-            // 使用配置的密码进行认证。
-            jedis.auth(password);
+            // 使用配置的密码进行认证；未配置密码时跳过 AUTH，避免无密码实例认证失败。
+            if (StringUtils.hasText(password)) {
+                jedis.auth(password);
+            }
 
             // 认证成功，返回Jedis客户端。
             return jedis;

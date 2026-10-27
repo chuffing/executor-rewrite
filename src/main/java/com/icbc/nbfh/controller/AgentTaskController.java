@@ -70,18 +70,13 @@ public class AgentTaskController {
         }
 
         // 接收平台任务并提交到执行线程。
-        agentTaskService.submitTask(request);
+        try {
+            agentTaskService.submitTask(request);
+        } catch (RejectedExecutionException e) {
+            return busyResult(request.getTaskNo());
+        }
 
-        // 创建任务接收响应体。
-        TaskSubmitResultVO result = new TaskSubmitResultVO(
-                request.getTaskNo(),
-                "任务已接收"
-        );
-
-        return new ResultBean<>(
-                HttpStatus.ACCEPTED.value(),
-                result.getMessage(),
-                result);
+        return acceptedResult(request.getTaskNo());
     }
 
     /**
@@ -138,20 +133,15 @@ public class AgentTaskController {
 
         try {
             agentTaskService.submitTask(request);
+        } catch (RejectedExecutionException e) {
+            versionPackageService.deleteStagedPackage(packagePath);
+            return busyResult(request.getTaskNo());
         } catch (RuntimeException e) {
             versionPackageService.deleteStagedPackage(packagePath);
             throw e;
         }
 
-        TaskSubmitResultVO result = new TaskSubmitResultVO(
-                request.getTaskNo(),
-                "任务已接收"
-        );
-
-        return new ResultBean<>(
-                HttpStatus.ACCEPTED.value(),
-                result.getMessage(),
-                result);
+        return acceptedResult(request.getTaskNo());
     }
 
     /**
@@ -200,19 +190,37 @@ public class AgentTaskController {
 
         try {
             agentTaskService.submitTask(request);
+        } catch (RejectedExecutionException e) {
+            configFileService.deleteStagedFiles(directory);
+            return busyResult(request.getTaskNo());
         } catch (RuntimeException e) {
             configFileService.deleteStagedFiles(directory);
             throw e;
         }
 
-        TaskSubmitResultVO result = new TaskSubmitResultVO(
-                request.getTaskNo(),
-                "任务已接收"
-        );
-
-        return new ResultBean<>(HttpStatus.ACCEPTED.value(), result.getMessage(), result);
+        return acceptedResult(request.getTaskNo());
     }
 
+
+    /** 任务被线程池接收。 */
+    private ResultBean<TaskSubmitResultVO> acceptedResult(String taskNo) {
+        String message = "任务已接收";
+        return new ResultBean<>(
+                HttpStatus.ACCEPTED.value(),
+                message,
+                new TaskSubmitResultVO(taskNo, TaskSubmitStatus.ACCEPTED.name(), message)
+        );
+    }
+
+    /** 执行器工作线程与等待队列均已满。 */
+    private ResultBean<TaskSubmitResultVO> busyResult(String taskNo) {
+        String message = "执行器繁忙，任务未接收";
+        return new ResultBean<>(
+                HttpStatus.SERVICE_UNAVAILABLE.value(),
+                message,
+                new TaskSubmitResultVO(taskNo, TaskSubmitStatus.BUSY.name(), message)
+        );
+    }
 
     /**
      * 校验平台下发的任务参数。
@@ -275,7 +283,6 @@ public class AgentTaskController {
             case STOP_REDIS:
             case START_SENTINEL:
             case STOP_SENTINEL:
-            case VERIFY_TOPOLOGY:
                 // 以上操作不接收任务参数。
                 if (request.getParams() != null && !request.getParams().isEmpty()) {
                     throw new ParameterException(
@@ -283,6 +290,11 @@ public class AgentTaskController {
                             "当前任务类型不接收任务参数"
                     );
                 }
+                break;
+
+            case VERIFY_TOPOLOGY:
+                // 首次纳管/服务器切换可携带可选的期望主节点和本机角色。
+                validateTopologyVerifyParams(request.getParams());
                 break;
 
             case RESTORE_CONFIG:
@@ -304,6 +316,45 @@ public class AgentTaskController {
         return operationType;
     }
 
+
+    /**
+     * 校验拓扑验收的可选期望值。
+     *
+     * <p>params 为空表示只做通用拓扑验收；携带时只允许
+     * expectedMasterHostIp / expectedRole 两个参数。</p>
+     */
+    private void validateTopologyVerifyParams(Map<String, String> params) {
+        if (params == null || params.isEmpty()) {
+            return;
+        }
+        for (String key : params.keySet()) {
+            if (!TaskParamConstants.EXPECTED_MASTER_HOST_IP.equals(key)
+                    && !TaskParamConstants.EXPECTED_ROLE.equals(key)) {
+                throw new ParameterException(
+                        ParameterErrorCode.TASK_PARAM_INVALID,
+                        "拓扑验收任务只允许期望主节点IP和期望角色参数");
+            }
+        }
+
+        String expectedMasterHostIp =
+                params.get(TaskParamConstants.EXPECTED_MASTER_HOST_IP);
+        if (expectedMasterHostIp != null
+                && (expectedMasterHostIp.length() > 64
+                || expectedMasterHostIp.contains(" "))) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "期望主节点IP格式不正确");
+        }
+
+        String expectedRole = params.get(TaskParamConstants.EXPECTED_ROLE);
+        if (expectedRole != null
+                && !"MASTER".equalsIgnoreCase(expectedRole)
+                && !"REPLICA".equalsIgnoreCase(expectedRole)) {
+            throw new ParameterException(
+                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    "期望角色只能是MASTER或REPLICA");
+        }
+    }
 
     /**
      * 校验恢复配置操作需要的两份备份文件SHA256。

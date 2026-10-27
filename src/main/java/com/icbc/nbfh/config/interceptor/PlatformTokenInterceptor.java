@@ -2,6 +2,7 @@ package com.icbc.nbfh.config.interceptor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.icbc.nbfh.common.ResultBean;
+import com.icbc.nbfh.entity.VO.ErrorResultVO;
 import com.icbc.nbfh.service.RegisterService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -14,7 +15,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 /**
- * 校验管理平台调用执行器接口时携带的 Bearer Token。
+ * 校验管理平台调用执行器接口时携带的 Bearer Token
  */
 @Component
 @RequiredArgsConstructor
@@ -28,7 +29,7 @@ public class PlatformTokenInterceptor implements HandlerInterceptor {
 
 
     /**
-     * 校验平台请求携带的Bearer Token。
+     * 校验平台请求携带的Bearer Token
      */
     @Override
     public boolean preHandle(HttpServletRequest request,
@@ -42,15 +43,18 @@ public class PlatformTokenInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        // 身份校验失败，直接返回401，不再进入Controller。
+        // 身份校验失败，直接返回401，不再进入Controller
         response.setStatus(HttpStatus.UNAUTHORIZED.value());
         response.setCharacterEncoding("UTF-8");
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 
-        ResultBean<Void> result = new ResultBean<>(
+        ResultBean<ErrorResultVO> result = new ResultBean<>(
                 HttpStatus.UNAUTHORIZED.value(),
-                "平台令牌无效",
-                null
+                "身份校验失败",
+                new ErrorResultVO(
+                        String.valueOf(HttpStatus.UNAUTHORIZED.value()),
+                        "身份校验失败",
+                        "平台令牌无效")
         );
 
         objectMapper.writeValue(response.getWriter(), result);

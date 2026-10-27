@@ -2,7 +2,9 @@ package com.icbc.nbfh.service;
 
 import com.icbc.nbfh.client.PlatformClient;
 import com.icbc.nbfh.collector.RedisInfoCollector;
+import com.icbc.nbfh.collector.SentinelInfoCollector;
 import com.icbc.nbfh.collector.TopologyCollector;
+import com.icbc.nbfh.store.LocalMetricStore;
 import com.icbc.nbfh.command.FixedScriptExecutor;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.controller.AgentTaskController;
@@ -77,7 +79,8 @@ class ServiceWiringTest {
 
         for (Field field : AgentTaskServiceImpl.class.getDeclaredFields()) {
             Class<?> type = field.getType();
-            if (type.getName().startsWith("com.icbc.nbfh.service.")) {
+            // 只检查 service 包下的业务接口；impl 包中的辅助组件不是服务接口
+            if ("com.icbc.nbfh.service".equals(type.getPackage().getName())) {
                 assertTrue(type.isInterface(), field.getName());
             }
         }
@@ -113,6 +116,18 @@ class ServiceWiringTest {
         @Bean
         RedisInfoCollector redisInfoCollector() {
             return mock(RedisInfoCollector.class);
+        }
+
+        /** 阻止测试连接Sentinel。 */
+        @Bean
+        SentinelInfoCollector sentinelInfoCollector() {
+            return mock(SentinelInfoCollector.class);
+        }
+
+        /** 阻止测试读写本地采集缓存。 */
+        @Bean
+        LocalMetricStore localMetricStore() {
+            return mock(LocalMetricStore.class);
         }
 
         /** 阻止测试采集真实Redis和Sentinel拓扑。 */

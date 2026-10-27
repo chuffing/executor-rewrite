@@ -13,6 +13,9 @@ public class TaskSubmitResultVO {
     /** 任务编号。 */
     private String taskNo;
 
+    /** 任务接收状态：ACCEPTED / BUSY */
+    private String status;
+
     /** 任务接收结果说明。 */
     private String message;
 }
