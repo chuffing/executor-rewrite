@@ -2,6 +2,7 @@ package com.icbc.nbfh.collector;
 
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.SentinelNodeDTO;
+import com.icbc.nbfh.util.NetworkUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -23,15 +24,12 @@ import java.util.Set;
 /**
  * Sentinel 节点采集器
  *
- * 哨兵节点不保存业务数据，执行器通过 {@code SENTINEL sentinels <master-name>}
- * 获取该 master 下所有哨兵节点的 ip/port/flags，转换为平台
- * {@code sentinel_node_info} 需要的节点名、IP、端口、在线状态
- *
- * 采集策略：
- *   遍历 {@code agent.sentinel.nodes} 与 {@code agent.sentinel.host:port}，
- *       任一可达即可拿到完整哨兵列表；
- *   不可达的配置节点也会以“离线”上报，便于平台及时发现哨兵故障；
- *   未启用或未配置哨兵时返回空列表，不影响 Redis 指标采集
+ * Redis 的 SENTINEL sentinels <master-name> 只返回其他哨兵，
+ * 不包含当前接收命令的哨兵自身因此执行器对每个可达的配置哨兵：
+ *   用“当前服务器 IP + 该 Sentinel 配置端口”组装自身节点，并标记在线；
+ *   再调用 SENTINEL sentinels，把返回的其他哨兵合并进来；
+ *   按 ip:port 去重，避免配置为 127.0.0.1 时出现重复或错误地址
+ * 不可达的配置节点保留为离线兜底；未启用或未配置时返回空列表
  */
 @Slf4j
 @Component
@@ -53,7 +51,7 @@ public class SentinelInfoCollector {
     }
 
     /**
-     * 采集 Sentinel 节点列表
+     * 采集 Sentinel 节点列表，包含每台可达哨兵自身和其他已发现哨兵
      *
      * @return 节点列表；未启用/未配置时返回空列表，不抛异常
      */
@@ -70,7 +68,7 @@ public class SentinelInfoCollector {
             return Collections.emptyList();
         }
 
-        // ip:port -> node，保持插入顺序；先放离线兜底，在线结果覆盖
+        // ip:port -> node先预置配置节点为离线，查询成功的节点覆盖为在线
         Map<String, SentinelNodeDTO> nodes = new LinkedHashMap<>();
         for (HostPort hostPort : configuredNodes) {
             nodes.put(hostPort.key(), offlineNode(hostPort, masterName));
@@ -78,20 +76,25 @@ public class SentinelInfoCollector {
 
         for (HostPort hostPort : configuredNodes) {
             try {
-                List<Map<String, String>> sentinels =
+                // SENTINEL sentinels 只返回其他哨兵
+                List<Map<String, String>> otherSentinels =
                         querySentinels(hostPort, masterName, config.getTimeout());
-                if (sentinels.isEmpty()) {
-                    // 能连上但未返回节点：保留离线兜底，避免伪造在线节点
-                    continue;
-                }
-                // 返回列表是权威数据：移除按配置地址预置的兜底节点，
-                // 避免 127.0.0.1 之类的配置地址与真实节点 IP 重复上报
+
+                HostPort selfAddress = resolveSelfAddress(hostPort);
                 nodes.remove(hostPort.key());
-                for (Map<String, String> item : sentinels) {
-                    SentinelNodeDTO node = toNode(item, masterName);
-                    if (node != null) {
-                        nodes.put(node.getNodeIp() + ":" + node.getNodePort(), node);
+                nodes.put(selfAddress.key(), buildNode(
+                        selfAddress.host, String.valueOf(selfAddress.port), "1", masterName));
+
+                // 合并其他哨兵，与自身地址相同的记录跳过，避免重复
+                for (Map<String, String> item : otherSentinels) {
+                    if (isSameAddress(item, selfAddress)) {
+                        continue;
                     }
+                    SentinelNodeDTO node = toNode(item, masterName);
+                    if (node == null) {
+                        continue;
+                    }
+                    nodes.put(node.getNodeIp() + ":" + node.getNodePort(), node);
                     if (nodes.size() >= MAX_NODE_SIZE) {
                         break;
                     }
@@ -150,7 +153,10 @@ public class SentinelInfoCollector {
     }
 
     /**
-     * 向指定哨兵发送 {@code SENTINEL sentinels <masterName>}，解析返回的节点数组
+     * 查询一个 Sentinel 已发现的其他哨兵
+     *
+     * PING 失败会抛异常，由调用方保留离线兜底；PING 成功但
+     * ENTINEL sentinels 查询失败时返回空列表，当前哨兵自身仍会上报在线
      */
     private List<Map<String, String>> querySentinels(HostPort hostPort,
                                                      String masterName,
@@ -162,23 +168,29 @@ public class SentinelInfoCollector {
                 jedis.auth(password);
             }
             if (!"PONG".equalsIgnoreCase(jedis.ping())) {
-                return Collections.emptyList();
+                throw new IllegalStateException("Sentinel PING 未返回 PONG");
             }
 
-            Client client = jedis.getClient();
-            client.sendCommand(Protocol.Command.SENTINEL, "sentinels", masterName);
-            List<Object> reply = client.getObjectMultiBulkReply();
-            List<Map<String, String>> result = new ArrayList<>();
-            if (reply == null) {
-                return result;
-            }
-            for (Object entry : reply) {
-                Map<String, String> item = toMap(entry);
-                if (!item.isEmpty()) {
-                    result.add(item);
+            try {
+                Client client = jedis.getClient();
+                client.sendCommand(Protocol.Command.SENTINEL, "sentinels", masterName);
+                List<Object> reply = client.getObjectMultiBulkReply();
+                List<Map<String, String>> result = new ArrayList<>();
+                if (reply == null) {
+                    return result;
                 }
+                for (Object entry : reply) {
+                    Map<String, String> item = toMap(entry);
+                    if (!item.isEmpty()) {
+                        result.add(item);
+                    }
+                }
+                return result;
+            } catch (Exception e) {
+                // 已经 PING 成功，至少把当前哨兵自身上报为在线
+                log.debug("查询 Sentinel 列表失败: {}", e.getMessage());
+                return Collections.emptyList();
             }
-            return result;
         } finally {
             try {
                 jedis.close();
@@ -186,6 +198,61 @@ public class SentinelInfoCollector {
                 // 关闭失败不影响采集结果
             }
         }
+    }
+
+    /**
+     * 当前查询哨兵的自身地址：当前服务器 IP + 该 Sentinel 配置端口
+     */
+    private HostPort resolveSelfAddress(HostPort configured) {
+        String serverIp = resolveServerIp(configured.host);
+        return new HostPort(serverIp, configured.port);
+    }
+
+    /**
+     * 解析当前服务器对平台可见的 IP
+     *
+     * 优先使用 agent.host-ip / 自动识别的本机 IPv4；无法识别时，
+     * 非 loopback 配置回退配置地址，loopback 配置回退 127.0.0.1
+     */
+    private String resolveServerIp(String configuredHost) {
+        try {
+            String serverIp = NetworkUtils.resolveHostIp(properties.getHostIp());
+            String normalized = resolveNodeIp(serverIp);
+            if (StringUtils.hasText(normalized)) {
+                return normalized;
+            }
+        } catch (Exception e) {
+            log.debug("解析当前服务器 IP 失败: {}", e.getMessage());
+        }
+
+        if (!isLoopbackHost(configuredHost)) {
+            String normalized = resolveNodeIp(configuredHost);
+            if (StringUtils.hasText(normalized)) {
+                return normalized;
+            }
+        }
+        return "127.0.0.1";
+    }
+
+    /** 返回的其他哨兵是否与自身地址相同 */
+    private boolean isSameAddress(Map<String, String> item, HostPort selfAddress) {
+        String ip = resolveNodeIp(item.get("ip"));
+        String port = item.get("port");
+        if (!StringUtils.hasText(ip) || !isValidPort(port)) {
+            return false;
+        }
+        return selfAddress.key().equals(ip + ":" + port.trim());
+    }
+
+    private boolean isLoopbackHost(String host) {
+        if (!StringUtils.hasText(host)) {
+            return true;
+        }
+        String value = host.trim();
+        return "127.0.0.1".equals(value)
+                || "0.0.0.0".equals(value)
+                || "localhost".equalsIgnoreCase(value)
+                || "::1".equals(value);
     }
 
     private SentinelNodeDTO toNode(Map<String, String> item, String masterName) {
