@@ -1,7 +1,7 @@
 package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.service.VersionPackageService;
-import com.icbc.nbfh.common.Enum.ParameterErrorCode;
+import com.icbc.nbfh.common.exception.ParameterCode;
 import com.icbc.nbfh.common.constant.ValidationConstants;
 import com.icbc.nbfh.common.constant.VersionPackageConstants;
 import com.icbc.nbfh.common.exception.ParameterException;
@@ -82,7 +82,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
                     receivedSize += length;
                     if (receivedSize > ValidationConstants.MAX_UPGRADE_PACKAGE_SIZE_BYTES) {
                         throw new ParameterException(
-                                ParameterErrorCode.PACKAGE_FILE_INVALID,
+                                ParameterCode.PACKAGE_FILE_INVALID,
                                 "Redis源码包不能超过50 MiB"
                         );
                     }
@@ -95,7 +95,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
             // 如果实际没有读取到任何字节，说明收到的是空文件。
             if (receivedSize == 0) {
                 throw new ParameterException(
-                        ParameterErrorCode.PACKAGE_FILE_INVALID,
+                        ParameterCode.PACKAGE_FILE_INVALID,
                     "Redis源码包不能为空"
                 );
             }
@@ -103,7 +103,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
             // 比较实际读取字节数与MultipartFile报告的大小。
             if (receivedSize != file.getSize()) {
                 throw new ParameterException(
-                        ParameterErrorCode.PACKAGE_FILE_INVALID,
+                        ParameterCode.PACKAGE_FILE_INVALID,
                     "Redis源码包传输不完整"
                 );
             }
@@ -112,7 +112,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
             String actualSha256 = FileChecksumUtil.calculateSha256(temporaryPath);
             if (!expectedSha256.equalsIgnoreCase(actualSha256)) {
                 throw new ParameterException(
-                        ParameterErrorCode.PACKAGE_CHECKSUM_MISMATCH,
+                        ParameterCode.PACKAGE_CHECKSUM_MISMATCH,
                     "Redis源码包SHA256与平台提供的摘要不一致"
                 );
             }

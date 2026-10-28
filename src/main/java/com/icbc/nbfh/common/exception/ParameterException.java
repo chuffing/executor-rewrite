@@ -1,7 +1,5 @@
 package com.icbc.nbfh.common.exception;
 
-import com.icbc.nbfh.common.Enum.ParameterErrorCode;
-
 /**
  * 参数校验异常。
  */
@@ -9,7 +7,7 @@ public class ParameterException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;
 
-    private final String code;
+    private final Integer code;
 
     private final String msg;
 
@@ -18,18 +16,18 @@ public class ParameterException extends RuntimeException {
     /**
      * 创建参数校验异常。
      */
-    public ParameterException(ParameterErrorCode errorCode,
+    public ParameterException(ParameterCode parameterCode,
                               String errorMsg) {
         super(errorMsg);
-        this.code = errorCode.getCode();
-        this.msg = errorCode.getMsg();
+        this.code = parameterCode.getCode();
+        this.msg = parameterCode.getMsg();
         this.errorMsg = errorMsg;
     }
 
     /**
      * 获取错误码。
      */
-    public String getCode() {
+    public Integer getCode() {
         return code;
     }
 

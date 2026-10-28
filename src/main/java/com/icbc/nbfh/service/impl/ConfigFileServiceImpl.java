@@ -1,6 +1,6 @@
 package com.icbc.nbfh.service.impl;
 
-import com.icbc.nbfh.common.Enum.ParameterErrorCode;
+import com.icbc.nbfh.common.exception.ParameterCode;
 import com.icbc.nbfh.common.constant.ConfigFileConstants;
 import com.icbc.nbfh.common.constant.ValidationConstants;
 import com.icbc.nbfh.common.exception.ParameterException;
@@ -133,7 +133,7 @@ public class ConfigFileServiceImpl implements ConfigFileService {
                 // 限制实际接收的数据量，最大1 MiB。
                 if (received > ValidationConstants.MAX_CONFIG_FILE_SIZE_BYTES) {
                     throw new ParameterException(
-                            ParameterErrorCode.CONFIG_FILE_INVALID,
+                            ParameterCode.CONFIG_FILE_INVALID,
                             name + "配置文件超过大小限制");
                 }
                 output.write(buffer, 0, length);
@@ -143,7 +143,7 @@ public class ConfigFileServiceImpl implements ConfigFileService {
         // ======== 3. 检查文件大小 ========
         if (received == 0 || received != file.getSize()) {
             throw new ParameterException(
-                    ParameterErrorCode.CONFIG_FILE_INVALID,
+                    ParameterCode.CONFIG_FILE_INVALID,
                     name + "配置文件为空或传输不完整");
         }
 
@@ -152,7 +152,7 @@ public class ConfigFileServiceImpl implements ConfigFileService {
                 FileChecksumUtil.calculateSha256(target))) {
 
             throw new ParameterException(
-                    ParameterErrorCode.CONFIG_CHECKSUM_MISMATCH,
+                    ParameterCode.CONFIG_CHECKSUM_MISMATCH,
                     name + "配置文件SHA256与平台提供的摘要不一致");
         }
     }

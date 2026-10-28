@@ -1,14 +1,14 @@
 package com.icbc.nbfh.controller;
 
-import com.icbc.nbfh.common.Enum.OperationErrorCode;
 import com.icbc.nbfh.common.Enum.OperationType;
-import com.icbc.nbfh.common.Enum.ParameterErrorCode;
 import com.icbc.nbfh.common.Enum.TaskSubmitStatus;
 import com.icbc.nbfh.common.ResultBean;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.common.constant.ConfigFileConstants;
 import com.icbc.nbfh.common.constant.ValidationConstants;
 import com.icbc.nbfh.common.constant.VersionPackageConstants;
+import com.icbc.nbfh.common.exception.ErrorCodeInfo;
+import com.icbc.nbfh.common.exception.ParameterCode;
 import com.icbc.nbfh.common.exception.ParameterException;
 import com.icbc.nbfh.entity.DTO.PlatformTaskDTO;
 import com.icbc.nbfh.entity.VO.TaskSubmitResultVO;
@@ -16,7 +16,6 @@ import com.icbc.nbfh.service.AgentTaskService;
 import com.icbc.nbfh.service.ConfigFileService;
 import com.icbc.nbfh.service.VersionPackageService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -59,13 +58,13 @@ public class AgentTaskController {
 
         if (OperationType.DEPLOY_VERSION == operationType) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "版本部署任务必须通过源码包上传接口提交"
             );
         }
 
         if (OperationType.DEPLOY_CONFIG == operationType) {
-            throw new ParameterException(ParameterErrorCode.TASK_PARAM_INVALID,
+            throw new ParameterException(ParameterCode.TASK_PARAM_INVALID,
                     "配置部署任务必须通过配置文件上传接口提交");
         }
 
@@ -98,7 +97,7 @@ public class AgentTaskController {
 
         if (OperationType.DEPLOY_VERSION != operationType) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_TYPE_UNSUPPORTED,
+                    ParameterCode.TASK_TYPE_UNSUPPORTED,
                     "源码包上传接口只接收版本部署任务"
             );
         }
@@ -157,7 +156,7 @@ public class AgentTaskController {
         OperationType operationType = validateTask(request);
 
         if (OperationType.DEPLOY_CONFIG != operationType) {
-            throw new ParameterException(ParameterErrorCode.TASK_TYPE_UNSUPPORTED,
+            throw new ParameterException(ParameterCode.TASK_TYPE_UNSUPPORTED,
                     "配置上传接口只接收配置部署任务");
         }
 
@@ -205,20 +204,28 @@ public class AgentTaskController {
     /** 任务被线程池接收。 */
     private ResultBean<TaskSubmitResultVO> acceptedResult(String taskNo) {
         String message = "任务已接收";
-        return new ResultBean<>(
-                HttpStatus.ACCEPTED.value(),
-                message,
-                new TaskSubmitResultVO(taskNo, TaskSubmitStatus.ACCEPTED.name(), message)
+        TaskSubmitResultVO result = new TaskSubmitResultVO(
+                taskNo,
+                TaskSubmitStatus.ACCEPTED.name(),
+                message
+        );
+        return ResultBean.restResult(
+                result,
+                ErrorCodeInfo.ACCEPTED
         );
     }
 
     /** 执行器工作线程与等待队列均已满。 */
     private ResultBean<TaskSubmitResultVO> busyResult(String taskNo) {
         String message = "执行器繁忙，任务未接收";
-        return new ResultBean<>(
-                HttpStatus.SERVICE_UNAVAILABLE.value(),
-                message,
-                new TaskSubmitResultVO(taskNo, TaskSubmitStatus.BUSY.name(), message)
+        TaskSubmitResultVO result = new TaskSubmitResultVO(
+                taskNo,
+                TaskSubmitStatus.BUSY.name(),
+                message
+        );
+        return ResultBean.restResult(
+                result,
+                ErrorCodeInfo.SERVICE_UNAVAILABLE
         );
     }
 
@@ -232,7 +239,7 @@ public class AgentTaskController {
 
         if (request == null) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "任务报文不能为空"
             );
         }
@@ -242,7 +249,7 @@ public class AgentTaskController {
                 || !ValidationConstants.TASK_NO_PATTERN
                 .matcher(request.getTaskNo()).matches()) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_NO_INVALID,
+                    ParameterCode.TASK_NO_INVALID,
                     "taskNo必须符合TASK加12位数字的格式"
             );
         }
@@ -250,7 +257,7 @@ public class AgentTaskController {
         // 2. 校验步骤编号。
         if (request.getStepNo() == null || request.getStepNo() <= 0) {
             throw new ParameterException(
-                    ParameterErrorCode.STEP_NO_INVALID,
+                    ParameterCode.STEP_NO_INVALID,
                     "stepNo必须大于0"
             );
         }
@@ -260,7 +267,7 @@ public class AgentTaskController {
 
         if (taskType == null || taskType.trim().isEmpty()) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_TYPE_EMPTY,
+                    ParameterCode.TASK_TYPE_EMPTY,
                     "任务类型不能为空"
             );
         }
@@ -271,7 +278,7 @@ public class AgentTaskController {
             operationType = OperationType.valueOf(taskType);
         } catch (IllegalArgumentException e) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_TYPE_UNSUPPORTED,
+                    ParameterCode.TASK_TYPE_UNSUPPORTED,
                     "不支持的任务类型：" + taskType
             );
         }
@@ -287,7 +294,7 @@ public class AgentTaskController {
                 // 以上操作不接收任务参数。
                 if (request.getParams() != null && !request.getParams().isEmpty()) {
                     throw new ParameterException(
-                            ParameterErrorCode.TASK_PARAM_INVALID,
+                            ParameterCode.TASK_PARAM_INVALID,
                             "当前任务类型不接收任务参数"
                     );
                 }
@@ -319,7 +326,7 @@ public class AgentTaskController {
     private void validateRestoreConfigParams(Map<String, String> params) {
         if (params == null) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "恢复配置参数不能为空"
             );
         }
@@ -330,7 +337,7 @@ public class AgentTaskController {
         if (redisSha256 == null || !ValidationConstants.SHA256_PATTERN
                 .matcher(redisSha256).matches()) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "Redis备份配置摘要格式不正确"
             );
         }
@@ -341,14 +348,14 @@ public class AgentTaskController {
         if (sentinelSha256 == null || !ValidationConstants.SHA256_PATTERN
                 .matcher(sentinelSha256).matches()) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "Sentinel备份配置摘要格式不正确"
             );
         }
 
         if (params.size() != 2) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "恢复配置任务只允许两份备份配置的SHA256参数"
             );
         }
@@ -362,7 +369,7 @@ public class AgentTaskController {
 
         if(params == null) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "版本切换参数不能为空"
             );
         }
@@ -373,7 +380,7 @@ public class AgentTaskController {
         // 检查目标版本号是否为空。
         if(targetVersion == null || targetVersion.trim().isEmpty()) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "目标版本号不能为空"
             );
         }
@@ -381,7 +388,7 @@ public class AgentTaskController {
         // 检查目标版本号格式。
         if(!ValidationConstants.VERSION_PATTERN.matcher(targetVersion).matches()) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "目标版本号格式不正确"
             );
         }
@@ -391,26 +398,26 @@ public class AgentTaskController {
     private void validateDeployConfigParams(Map<String, String> params) {
 
         if (params == null) {
-            throw new ParameterException(ParameterErrorCode.TASK_PARAM_INVALID,
+            throw new ParameterException(ParameterCode.TASK_PARAM_INVALID,
                     "配置部署参数不能为空");
         }
 
         String redisSha256 = params.get(TaskParamConstants.REDIS_CONFIG_SHA256);
         if (redisSha256 == null
                 || !ValidationConstants.SHA256_PATTERN.matcher(redisSha256).matches()) {
-            throw new ParameterException(ParameterErrorCode.TASK_PARAM_INVALID,
+            throw new ParameterException(ParameterCode.TASK_PARAM_INVALID,
                     "Redis配置文件摘要格式不正确");
         }
 
         String sentinelSha256 = params.get(TaskParamConstants.SENTINEL_CONFIG_SHA256);
         if (sentinelSha256 == null
                 || !ValidationConstants.SHA256_PATTERN.matcher(sentinelSha256).matches()) {
-            throw new ParameterException(ParameterErrorCode.TASK_PARAM_INVALID,
+            throw new ParameterException(ParameterCode.TASK_PARAM_INVALID,
                     "Sentinel配置文件摘要格式不正确");
         }
 
         if (params.size() != 2) {
-            throw new ParameterException(ParameterErrorCode.TASK_PARAM_INVALID,
+            throw new ParameterException(ParameterCode.TASK_PARAM_INVALID,
                     "配置部署任务参数只允许两份文件的SHA256");
         }
     }
@@ -419,11 +426,11 @@ public class AgentTaskController {
     private void validateConfigFile(MultipartFile file, String name) {
 
         if (file == null || file.isEmpty()) {
-            throw new ParameterException(ParameterErrorCode.CONFIG_FILE_INVALID,
+            throw new ParameterException(ParameterCode.CONFIG_FILE_INVALID,
                     name + "配置文件不能为空");
         }
         if (file.getSize() > ValidationConstants.MAX_CONFIG_FILE_SIZE_BYTES) {
-            throw new ParameterException(ParameterErrorCode.CONFIG_FILE_INVALID,
+            throw new ParameterException(ParameterCode.CONFIG_FILE_INVALID,
                     name + "配置文件不能超过1 MiB");
         }
     }
@@ -438,7 +445,7 @@ public class AgentTaskController {
 
         if (params == null) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "版本部署参数不能为空"
             );
         }
@@ -448,7 +455,7 @@ public class AgentTaskController {
 
         if (packageId == null || packageId.trim().isEmpty()) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "源码包编号不能为空"
             );
         }
@@ -456,13 +463,13 @@ public class AgentTaskController {
         try {
             if (Long.parseLong(packageId) <= 0) {
                 throw new ParameterException(
-                        ParameterErrorCode.TASK_PARAM_INVALID,
+                        ParameterCode.TASK_PARAM_INVALID,
                         "源码包编号必须大于0"
                 );
             }
         } catch (NumberFormatException e) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "源码包编号格式不正确"
             );
         }
@@ -476,7 +483,7 @@ public class AgentTaskController {
                 || !ValidationConstants.VERSION_PATTERN
                 .matcher(targetVersion).matches()) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "目标版本号格式不正确"
             );
         }
@@ -490,7 +497,7 @@ public class AgentTaskController {
                 || !ValidationConstants.SHA256_PATTERN
                 .matcher(packageSha256).matches()) {
             throw new ParameterException(
-                    ParameterErrorCode.TASK_PARAM_INVALID,
+                    ParameterCode.TASK_PARAM_INVALID,
                     "源码包摘要格式不正确"
             );
         }
@@ -506,7 +513,7 @@ public class AgentTaskController {
         // 1. 检查文件是否为空及大小是否超限。
         if (file == null || file.isEmpty()) {
             throw new ParameterException(
-                    ParameterErrorCode.PACKAGE_FILE_INVALID,
+                    ParameterCode.PACKAGE_FILE_INVALID,
                     "Redis源码包不能为空"
             );
         }
@@ -514,7 +521,7 @@ public class AgentTaskController {
         if (file.getSize()
                 > ValidationConstants.MAX_UPGRADE_PACKAGE_SIZE_BYTES) {
             throw new ParameterException(
-                    ParameterErrorCode.PACKAGE_FILE_INVALID,
+                    ParameterCode.PACKAGE_FILE_INVALID,
                     "Redis源码包不能超过50 MiB"
             );
         }
@@ -525,14 +532,14 @@ public class AgentTaskController {
         if (originalFileName == null
                 || originalFileName.trim().isEmpty()) {
             throw new ParameterException(
-                    ParameterErrorCode.PACKAGE_FILE_INVALID,
+                    ParameterCode.PACKAGE_FILE_INVALID,
                     "Redis源码包文件名不能为空"
             );
         }
 
         if (!originalFileName.equals(originalFileName.trim())) {
             throw new ParameterException(
-                    ParameterErrorCode.PACKAGE_FILE_INVALID,
+                    ParameterCode.PACKAGE_FILE_INVALID,
                     "Redis源码包文件名不能包含首尾空格"
             );
         }
@@ -540,21 +547,21 @@ public class AgentTaskController {
         if (originalFileName.length()
                 > ValidationConstants.MAX_PACKAGE_FILE_NAME_LENGTH) {
             throw new ParameterException(
-                    ParameterErrorCode.PACKAGE_FILE_INVALID,
+                    ParameterCode.PACKAGE_FILE_INVALID,
                     "Redis源码包文件名过长"
             );
         }
 
         if (originalFileName.contains("/") || originalFileName.contains("\\")) {
             throw new ParameterException(
-                    ParameterErrorCode.PACKAGE_FILE_INVALID,
+                    ParameterCode.PACKAGE_FILE_INVALID,
                     "Redis源码包文件名不能包含路径"
             );
         }
 
         if (originalFileName.contains("..")) {
             throw new ParameterException(
-                    ParameterErrorCode.PACKAGE_FILE_INVALID,
+                    ParameterCode.PACKAGE_FILE_INVALID,
                     "Redis源码包文件名不能包含父目录标记"
             );
         }
@@ -563,7 +570,7 @@ public class AgentTaskController {
                 + targetVersion + VersionPackageConstants.SOURCE_PACKAGE_SUFFIX;
         if (!expectedFileName.equals(originalFileName)) {
             throw new ParameterException(
-                    ParameterErrorCode.PACKAGE_FILE_INVALID,
+                    ParameterCode.PACKAGE_FILE_INVALID,
                     "Redis源码包必须命名为redis-{version}.tar.gz"
             );
         }

@@ -2,7 +2,7 @@ package com.icbc.nbfh.config.interceptor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.icbc.nbfh.common.ResultBean;
-import com.icbc.nbfh.entity.VO.ErrorResultVO;
+import com.icbc.nbfh.common.exception.ErrorCodeInfo;
 import com.icbc.nbfh.service.RegisterService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -48,13 +48,9 @@ public class PlatformTokenInterceptor implements HandlerInterceptor {
         response.setCharacterEncoding("UTF-8");
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 
-        ResultBean<ErrorResultVO> result = new ResultBean<>(
-                HttpStatus.UNAUTHORIZED.value(),
-                "身份校验失败",
-                new ErrorResultVO(
-                        String.valueOf(HttpStatus.UNAUTHORIZED.value()),
-                        "身份校验失败",
-                        "平台令牌无效")
+        ResultBean<Void> result = ResultBean.error(
+                ErrorCodeInfo.UNAUTHORIZED,
+                "平台令牌无效"
         );
 
         objectMapper.writeValue(response.getWriter(), result);

@@ -1,6 +1,7 @@
 package com.icbc.nbfh.common;
 
 import cn.hutool.http.HttpStatus;
+import com.icbc.nbfh.common.exception.ErrorCodeInfo;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
@@ -71,9 +72,41 @@ public class ResultBean<T> implements Serializable {
     }
 
     /**
+     * 根据统一状态码创建响应对象。
+     */
+    public static <T> ResultBean<T> restResult(
+            T data,
+            ErrorCodeInfo errorCode) {
+        return resultBean(data, errorCode.getCode(), errorCode.getMsg());
+    }
+
+    /**
      * 创建成功响应。
      */
     public static <T> ResultBean<T> success(T data) {
         return new ResultBean<>(data);
+    }
+
+    /**
+     * 根据统一状态码创建失败响应。
+     */
+    public static <T> ResultBean<T> error(ErrorCodeInfo errorCode) {
+        return restResult(null, errorCode);
+    }
+
+    /**
+     * 根据指定响应码和响应信息创建失败响应。
+     */
+    public static <T> ResultBean<T> error(int code, String msg) {
+        return resultBean(null, code, msg);
+    }
+
+    /**
+     * 使用统一状态码和自定义响应信息创建失败响应。
+     */
+    public static <T> ResultBean<T> error(
+            ErrorCodeInfo errorCode,
+            String msg) {
+        return resultBean(null, errorCode.getCode(), msg);
     }
 }
