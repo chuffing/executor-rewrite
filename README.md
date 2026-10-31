@@ -13,7 +13,6 @@
 - Redis、Sentinel 的服务名称。
 - Redis 数据目录、正式配置文件路径和备份文件路径。
 - Redis 版本安装目录和 `current` 软链接路径。
-- `redisReady` 状态。
 
 建议把“同一个 JAR + 本机 application.yml”作为一台服务器的完整执行器部署包，不要为了修改配置重新编译 JAR。
 
@@ -128,13 +127,6 @@ server:
   port: 9101
 
 agent:
-  # 必须指向当前正在使用的外置配置文件。
-  config-file: /opt/redis/agent/application.yml
-
-  # 部署意图标记：已有生产Redis时填写true；没有部署Redis的新服务器填写false。
-  # 实际注册时仍会 PING 探测，连接异常时上传 redisReady=false。
-  redisReady: true
-
   # 建议每台服务器使用清晰且唯一的名称。
   agent-name: redis-agent-10.0.0.1
 
@@ -169,7 +161,11 @@ agent:
     timeout: 2000
     service-name: 请填写本机Redis服务名称
     config-file: /opt/redis/conf/redis.conf
+    # 启动脚本允许创建运行目录和日志目录的受控根目录
     data-dir: /opt/redis/data
+    log-dir: /opt/redis/logs
+    # 在PATH中可直接写redis-cli，否则填写绝对路径
+    cli-bin: redis-cli
     backup-file: /opt/redis/backup/redis.conf
 
   sentinel:
@@ -183,6 +179,8 @@ agent:
     # 可选：多哨兵地址，任一台可达即可发现全部哨兵；为空时只用 host:port
     # nodes: 10.0.0.1:26379,10.0.0.2:26379,10.0.0.3:26379
     config-file: /opt/redis/conf/sentinel.conf
+    data-dir: /opt/redis/data
+    log-dir: /opt/redis/logs
     backup-file: /opt/redis/backup/sentinel.conf
 
   operation:
@@ -202,9 +200,7 @@ agent:
 - 已拿到 token 但 `bound=false` 时，注册任务每 30s 自动二次注册，Redis 恢复后无需重启执行器；
 - 已绑定后，`isRegistered && isBound` 直接返回，不再请求平台注册接口。
 
-`agent.redisReady` 是部署意图标记，用于记录“本机是否应当有 Redis”；实际注册以 Redis 连通性探测为准。新服务器切换完成并且拓扑验收成功后，执行器会继续把外置 `application.yml` 中的 `redisReady` 修改为 `true`。
-
-因此，`agent.config-file` 建议配置为可写的外置配置文件绝对路径，并且文件中必须且只能存在一个 `redisReady:` 配置项（拓扑验收成功后自动更新时使用）。
+`redisReady` 由执行器根据 Redis 实际连通性实时计算，不需要在配置文件中人工设置。新服务器完成 Redis 部署并启动后，定时注册任务会自动探测并完成实例绑定。
 
 ## 六、注册与数据采集行为（与平台接口对齐）
 
@@ -212,9 +208,9 @@ agent:
 
 | 用途 | 方法/路径 | 说明 |
 | --- | --- | --- |
-| 注册/二次注册 | `POST /api/agent/register` | body：registerCode、hostIp、executorPort、redisReady、redisInfo；返回 executorToken/instanceId/bound |
-| 心跳 | `POST /api/agent/heartbeat` | `Authorization: Bearer <token>`；body：hostIp、executorPort；平台同时刷新绑定实例心跳 |
-| ping 平台 | `GET /api/agent/ping` | 采集上报前连续调用 3 次，取平均 RTT 作为 `pingLatency` |
+| 注册/二次注册 | `POST /agent/register` | body：registerCode、hostIp、executorPort、redisReady、redisInfo；返回 executorToken/instanceId/bound |
+| 心跳 | `POST /agent/heartbeat` | `Authorization: Bearer <token>`；body：hostIp、executorPort；平台同时刷新绑定实例心跳 |
+| ping 平台 | `GET /agent/ping` | 采集上报前连续调用 3 次，取平均 RTT 作为 `pingLatency` |
 | 指标上报 | `POST /metric/report` | body 为指标对象本身，token 在 body 中；一次请求同时提交 Redis 指标、pingLatency、sentinels |
 
 采集内容：
@@ -225,7 +221,7 @@ agent:
 | 延迟口径 | commandstats calls/usec 相邻周期差值，单位 **μs** | `rms_metric_log.latency` |
 | Redis 内存 | `used_memory / 1024^3`，单位 **GB**，保留 3 位小数 | `rms_metric_log.mem_us` |
 | 主从复制延迟 | 从节点 `master_last_io_seconds_ago`，主节点 0，单位 **s** | `rms_metric_log.repl_delay` |
-| 执行器 ping 平台 | `GET /api/agent/ping` 3 次平均，单位 **ms** | `rms_node_status_log.ping_latency` |
+| 执行器 ping 平台 | `GET /agent/ping` 3 次平均，单位 **ms** | `rms_node_status_log.ping_latency` |
 | Sentinel 节点 | `SENTINEL sentinels <service-name>`，按 ip:port 去重 | `sentinel_node_info`（随指标 upsert） |
 
 采集上报流程：先重传本地积压数据 → 采集 Redis → 采集 ping 延迟 → 采集 Sentinel →
@@ -235,31 +231,17 @@ agent:
 平台手动检测会调用执行器 `POST /api/collect`；执行器只返回本次采集报文，
 由平台回填 token、`collectType=1` 并写库，执行器不重复上报。
 
-## 七、配置执行器启动环境变量
+## 七、脚本配置由执行器自动注入
 
-Java 服务读取 `application.yml`，Shell 启停脚本读取 Java 进程继承到的环境变量。两部分必须保持一致。
+`application.yml` 是执行器和Shell脚本的唯一配置源。Java读取并校验配置后，
+在启动Redis或Sentinel脚本时通过 `ProcessBuilder` 把对应配置写入本次子进程环境。
 
-至少需要在执行器启动环境中配置：
+服务器不需要执行 `export`，也不需要在 `/etc/profile`、systemd的 `Environment=`
+或 `EnvironmentFile=` 中重复维护Redis和Sentinel配置。
 
-```bash
-export REDIS_HOST=127.0.0.1
-export REDIS_PORT=6379
-export REDIS_PASSWORD='本机Redis密码'
-export REDIS_CONFIG_FILE=/opt/redis/conf/redis.conf
-
-export SENTINEL_HOST=127.0.0.1
-export SENTINEL_PORT=26379
-export SENTINEL_PASSWORD='本机Sentinel密码'
-export SENTINEL_CONFIG_FILE=/opt/redis/conf/sentinel.conf
-```
-
-如果 `redis-cli` 不在执行器进程的 `PATH` 中，还需要配置：
-
-```bash
-export REDIS_CLI_BIN=/实际路径/redis-cli
-```
-
-如果使用 systemd 管理执行器，应将这些变量写入执行器对应的 systemd unit 或 EnvironmentFile。只在人工登录终端中执行 `export`，不会自动影响 systemd 启动的进程。
+Redis和Sentinel密码、端口、正式配置文件、受控数据/日志根目录以及 `redis-cli`
+位置全部填写在外置 `application.yml`。该文件包含密码，必须限制为执行器运行账户可读，
+建议权限为 `600`。
 
 ## 八、首次纳管现有三台生产服务器
 
@@ -270,11 +252,9 @@ export REDIS_CLI_BIN=/实际路径/redis-cli
 1. 复制同一个执行器 JAR 和七个固定脚本。
 2. 创建本机所需目录并设置执行器账户权限。
 3. 准备本机独立的外置 `application.yml`。
-4. 将 `redisReady` 设置为 `true`。
-5. 填写本机真实的 Redis、Sentinel 地址、端口、密码和服务名称。
-6. 填写平台地址和平台注册码。
-7. 配置与 YAML 一致的 Shell 环境变量。
-8. 启动执行器，确认执行器注册、心跳和数据采集正常。
+4. 填写本机真实的 Redis、Sentinel 地址、端口、密码和服务名称。
+5. 填写平台地址和平台注册码。
+6. 启动执行器，确认执行器注册、心跳和数据采集正常。
 
 平台服务器还需要人工保存三台生产服务器当前使用的配置文件。平台默认目录为：
 
@@ -304,11 +284,9 @@ export REDIS_CLI_BIN=/实际路径/redis-cli
 1. 复制同一个执行器 JAR 和七个固定脚本。
 2. 创建本机所需目录并设置执行器账户权限。
 3. 准备本机独立的外置 `application.yml`。
-4. 将 `redisReady` 设置为 `false`。
-5. 提前填写未来 Redis 和 Sentinel 将使用的端口、密码、配置路径及服务名称。
-6. 配置平台地址、注册码和本地 Token 保存路径。
-7. 配置 Shell 启停脚本需要的环境变量。
-8. 启动执行器并确认注册、心跳正常。此时没有 Redis，执行器只注册自身，不应采集 Redis 指标。
+4. 提前填写未来 Redis 和 Sentinel 将使用的端口、密码、配置路径及服务名称。
+5. 配置平台地址、注册码和本地 Token 保存路径。
+6. 启动执行器并确认注册、心跳正常。此时没有 Redis，执行器只注册自身，不应采集 Redis 指标。
 
 平台操作人员需要另外完成：
 
@@ -385,8 +363,6 @@ export REDIS_CLI_BIN=/实际路径/redis-cli
 启动每台执行器前逐项确认：
 
 - [ ] 本机使用的是正确的外置 `application.yml`。
-- [ ] `agent.config-file` 指向该外置配置文件的绝对路径。
-- [ ] `redisReady` 与本机是否已经部署 Redis 的实际情况一致。
 - [ ] `agent-name` 能够区分当前服务器。
 - [ ] 平台地址和注册码正确。
 - [ ] Token 文件路径可写，且没有复制其他服务器的 Token。
@@ -395,13 +371,13 @@ export REDIS_CLI_BIN=/实际路径/redis-cli
 - [ ] 七个固定脚本已经复制完成并且可读。
 - [ ] 包暂存目录、配置暂存目录、版本目录、数据目录已经创建。
 - [ ] 正式配置目录和备份目录已经创建且不是同一目录，权限正确。
-- [ ] Shell 环境变量与 YAML 配置一致。
+- [ ] `application.yml` 已填写Redis/Sentinel完整配置且权限为 `600`。
 - [ ] 执行器端口和平台之间的网络访问正常。
 - [ ] 版本安装目录所在文件系统的可用空间不少于配置要求。
 
 ## 十三、启动示例
 
-确认环境变量已经配置到当前进程或 systemd 后，可以使用外置配置启动：
+不需要预设Redis或Sentinel环境变量，直接使用外置配置启动：
 
 ```bash
 cd /opt/redis/agent
@@ -409,4 +385,4 @@ java -jar redis-monitor-agent.jar \
   --spring.config.additional-location=file:/opt/redis/agent/application.yml
 ```
 
-生产环境建议使用 systemd 等服务管理方式启动，并明确设置运行账户、环境变量、工作目录和自动重启策略。
+生产环境建议使用 systemd 等服务管理方式启动，并明确设置运行账户、工作目录和自动重启策略。

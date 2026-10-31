@@ -24,8 +24,19 @@ class StartStopScriptTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        self.data_root = self.root / 'data'
+        self.log_root = self.root / 'logs'
+        self.pid_root = self.root / 'run'
+        self.data_root.mkdir()
+        self.log_root.mkdir()
+        self.pid_root.mkdir()
         self.config = self.root / 'redis test.conf'
-        self.config.write_text('port 6379\n', encoding='utf-8')
+        self.config.write_text(
+            'port 6379\n'
+            f'dir {shell_path(self.data_root / "runtime")}\n'
+            f'logfile {shell_path(self.log_root / "redis.log")}\n'
+            f'pidfile {shell_path(self.pid_root / "redis.pid")}\n',
+            encoding='utf-8')
         self.log = self.root / 'calls.log'
         self.fake = self.root / 'fake-redis.sh'
         self.fake.write_text('''#!/bin/bash
@@ -37,7 +48,9 @@ if [[ "${REDISCLI_AUTH:-}" == "test-secret" ]]; then
 fi
 case "${@: -1}" in
     server)
-        if [[ "${INFO_ERROR:-}" == yes ]]; then
+        if [[ "${INFO_UNREACHABLE:-}" == yes ]]; then
+            exit 1
+        elif [[ "${INFO_ERROR:-}" == yes ]]; then
             echo 'NOAUTH Authentication required.'
         else
             printf 'redis_mode:%s\\r\\n' "$TEST_MODE"
@@ -54,7 +67,7 @@ exit "${FAKE_EXIT_CODE:-0}"
         self.fake.chmod(0o700)
         self.version = self.root / 'versions' / '6.2.19'
         (self.version / 'bin').mkdir(parents=True)
-        for name in ('redis-server', 'redis-sentinel'):
+        for name in ('redis-server', 'redis-sentinel', 'redis-cli'):
             shutil.copy2(self.fake, self.version / 'bin' / name)
         self.current = self.root / 'current'
         self.create_link(self.version)
@@ -66,6 +79,10 @@ exit "${FAKE_EXIT_CODE:-0}"
             'REDIS_CLI_BIN': shell_path(self.fake),
             'REDIS_CONFIG_FILE': shell_path(self.config),
             'SENTINEL_CONFIG_FILE': shell_path(self.config),
+            'REDIS_DATA_ROOT': shell_path(self.data_root),
+            'REDIS_LOG_ROOT': shell_path(self.log_root),
+            'SENTINEL_DATA_ROOT': shell_path(self.data_root),
+            'SENTINEL_LOG_ROOT': shell_path(self.log_root),
             'REDIS_PASSWORD': 'test-secret',
             'SENTINEL_PASSWORD': 'test-secret',
             'REDIS_HOST': '127.0.0.1', 'REDIS_PORT': '6379',
@@ -110,7 +127,8 @@ exit "${FAKE_EXIT_CODE:-0}"
     def test_start_arguments_and_config(self):
         for service in ('redis', 'sentinel'):
             with self.subTest(service=service):
-                result = self.run_script('start', service)
+                result = self.run_script(
+                    'start', service, INFO_UNREACHABLE='yes')
                 self.assertEqual(result.returncode, 0, result.stderr)
                 binary = 'redis-server' if service == 'redis' else 'redis-sentinel'
                 self.assertIn(shell_path(self.version / 'bin' / binary), self.calls())

@@ -1,6 +1,6 @@
 package com.icbc.nbfh.service.impl;
 
-import com.icbc.nbfh.common.Enum.OperationErrorCode;
+import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.common.constant.ValidationConstants;
 import com.icbc.nbfh.config.AgentProperties;
@@ -128,7 +128,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
                     FileChecksumUtil.calculateSha256(redisTemporary))) {
 
                 return OperationResultDTO.failure(
-                        OperationErrorCode.CHECKSUM_MISMATCH,
+                        BusinessCode.OPERATION_ERROR,
                         "Redis配置文件SHA256不一致",
                         startTime,
                         System.currentTimeMillis());
@@ -138,7 +138,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
                     FileChecksumUtil.calculateSha256(sentinelTemporary))) {
 
                 return OperationResultDTO.failure(
-                        OperationErrorCode.CHECKSUM_MISMATCH,
+                        BusinessCode.OPERATION_ERROR,
                         "Sentinel配置文件SHA256不一致",
                         startTime,
                         System.currentTimeMillis());
@@ -151,7 +151,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
                     FileChecksumUtil.calculateSha256(sentinelBackupTemporary))) {
 
                 return OperationResultDTO.failure(
-                        OperationErrorCode.CHECKSUM_MISMATCH,
+                        BusinessCode.OPERATION_ERROR,
                         "备份配置文件SHA256不一致",
                         startTime,
                         System.currentTimeMillis());
@@ -210,7 +210,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
             log.error("配置文件部署失败：文件系统不支持原子替换", e);
 
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     formalConfigDeployed
                             ? "正式配置已部署，但备份目录不支持原子替换"
                             : "文件系统不支持配置文件原子替换",
@@ -220,7 +220,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
         } catch (IllegalArgumentException e) {
 
             return OperationResultDTO.failure(
-                    OperationErrorCode.CONFIG_INVALID,
+                    BusinessCode.OPERATION_ERROR,
                     e.getMessage(),
                     startTime,
                     System.currentTimeMillis());
@@ -231,7 +231,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
             log.error("配置文件部署失败", e);
 
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     formalConfigDeployed
                             ? "正式配置已部署，但备份配置更新失败，请检查备份目录后重新部署"
                             : "配置文件部署失败，可能已有部分配置更新，请检查后重新部署",

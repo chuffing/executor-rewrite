@@ -130,14 +130,8 @@ public class RegisterServiceImpl implements RegisterService {
                     redisReady = false;
                     log.warn("Redis 就绪但读取身份信息失败，本轮按未就绪注册: {}", e.getMessage());
                 }
-            } else if (properties.isRedisReady()) {
-                log.warn("agent.redisReady=true 但 Redis 连接异常，本轮按未就绪注册，等待 Redis 恢复后二次注册");
             } else {
                 log.info("Redis 尚未就绪，本轮只注册执行器，等待 Redis 恢复后二次注册绑定");
-            }
-
-            if (redisReady && !properties.isRedisReady()) {
-                log.info("agent.redisReady=false 但 Redis 实际可连接，按就绪注册并绑定实例");
             }
 
             // 调平台注册接口

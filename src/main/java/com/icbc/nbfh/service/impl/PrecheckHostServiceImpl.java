@@ -1,7 +1,7 @@
 package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.command.FixedScriptExecutor;
-import com.icbc.nbfh.common.Enum.OperationErrorCode;
+import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.CommandResultDTO;
@@ -107,7 +107,7 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
             // 这里只检查部署前最低空间，不保证后续磁盘空间不会发生变化。
             if (availableSpace < minimumFreeSpace) {
                 return OperationResultDTO.failure(
-                        OperationErrorCode.RESOURCE_INSUFFICIENT,
+                        BusinessCode.OPERATION_ERROR,
                         "版本安装目录所在文件系统可用空间不足",
                         startTime, System.currentTimeMillis());
             }
@@ -124,7 +124,7 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
                         agentProperties.getRedis().getTimeout())) {
 
                     return OperationResultDTO.failure(
-                            OperationErrorCode.PORT_OCCUPIED,
+                            BusinessCode.OPERATION_ERROR,
                             "Redis目标端口已被其他服务占用",
                             startTime, System.currentTimeMillis());
                 }
@@ -140,7 +140,7 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
                         agentProperties.getSentinel().getPassword(),
                         agentProperties.getSentinel().getTimeout())) {
                     return OperationResultDTO.failure(
-                            OperationErrorCode.PORT_OCCUPIED,
+                            BusinessCode.OPERATION_ERROR,
                             "Sentinel目标端口已被其他服务占用",
                             startTime,
                             System.currentTimeMillis());
@@ -158,7 +158,7 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
 
                     // 如果脚本不存在、不是普通文件或不可读，返回失败。
                     return OperationResultDTO.failure(
-                            OperationErrorCode.COMMAND_NOT_FOUND,
+                            BusinessCode.OPERATION_ERROR,
                             "固定脚本不存在或不可读：" + type.getFileName(),
                             startTime, System.currentTimeMillis());
                 }
@@ -168,13 +168,13 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
             CommandResultDTO commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.PRECHECK_HOST, operation.getScriptTimeoutSeconds());
             if (commandResult.isTimedOut()) {
-                return OperationResultDTO.failure(OperationErrorCode.COMMAND_TIMEOUT,
+                return OperationResultDTO.failure(BusinessCode.OPERATION_ERROR,
                         "主机依赖检查脚本执行超时", startTime, System.currentTimeMillis());
             }
             if (commandResult.getExitCode() != 0) {
                 log.error("主机依赖检查失败，stdout={}，stderr={}",
                         commandResult.getStdout(), commandResult.getStderr());
-                return OperationResultDTO.failure(OperationErrorCode.PRECONDITION_FAILED,
+                return OperationResultDTO.failure(BusinessCode.OPERATION_ERROR,
                         "主机运行依赖检查未通过，请查看执行器日志", startTime, System.currentTimeMillis());
             }
 
@@ -186,24 +186,24 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
             );
 
         } catch (IllegalArgumentException e) {
-            return OperationResultDTO.failure(OperationErrorCode.CONFIG_INVALID,
+            return OperationResultDTO.failure(BusinessCode.OPERATION_ERROR,
                     e.getMessage(), startTime, System.currentTimeMillis());
 
 
         } catch (FileNotFoundException e) {
-            return OperationResultDTO.failure(OperationErrorCode.COMMAND_NOT_FOUND,
+            return OperationResultDTO.failure(BusinessCode.OPERATION_ERROR,
                     "主机预检查脚本不存在", startTime, System.currentTimeMillis());
 
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return OperationResultDTO.failure(OperationErrorCode.UNKNOWN_ERROR,
+            return OperationResultDTO.failure(BusinessCode.SYSTEM_ERROR,
                     "主机预检查被中断", startTime, System.currentTimeMillis());
 
 
         } catch (IOException e) {
             log.error("主机环境检查失败", e);
-            return OperationResultDTO.failure(OperationErrorCode.PRECONDITION_FAILED,
+            return OperationResultDTO.failure(BusinessCode.OPERATION_ERROR,
                     "主机环境检查失败：" + e.getMessage(), startTime, System.currentTimeMillis());
         }
     }

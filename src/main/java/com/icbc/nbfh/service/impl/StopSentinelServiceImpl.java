@@ -2,7 +2,7 @@ package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.service.StopSentinelService;
 
-import com.icbc.nbfh.common.Enum.OperationErrorCode;
+import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.CommandResultDTO;
@@ -45,7 +45,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
 
         } catch (IOException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.SENTINEL_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel停止前状态检查失败",
                     startTime,
                     System.currentTimeMillis()
@@ -64,7 +64,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
 
         } catch (FileNotFoundException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_NOT_FOUND,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel停止脚本不存在",
                     startTime,
                     System.currentTimeMillis()
@@ -72,7 +72,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
 
         } catch (InterruptedException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.UNKNOWN_ERROR,
+                    BusinessCode.SYSTEM_ERROR,
                     "Sentinel停止操作被中断",
                     startTime,
                     System.currentTimeMillis()
@@ -80,7 +80,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
 
         } catch (IOException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel停止脚本无法执行",
                     startTime,
                     System.currentTimeMillis()
@@ -96,7 +96,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
 
         } catch (InterruptedException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.UNKNOWN_ERROR,
+                    BusinessCode.SYSTEM_ERROR,
                     "等待Sentinel停止时被中断",
                     startTime,
                     System.currentTimeMillis()
@@ -104,7 +104,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
 
         } catch (IOException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.SENTINEL_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel停止状态检查失败",
                     startTime,
                     System.currentTimeMillis()
@@ -119,7 +119,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
         // 5. Sentinel没有停止，再根据脚本执行结果返回具体失败原因。
         if (commandResult.isTimedOut()) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_TIMEOUT,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel停止脚本执行超时，并且Sentinel仍未停止",
                     startTime,
                     System.currentTimeMillis()
@@ -128,7 +128,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
 
         if (commandResult.getExitCode() != 0) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel停止脚本执行失败，并且Sentinel仍未停止",
                     startTime,
                     System.currentTimeMillis()
@@ -207,7 +207,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
         // 5. Sentinel无法PING，但端口仍然被占用。
         if (!pingSuccess && portOpen) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.PORT_OCCUPIED,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel无法PING，但端口仍然开放",
                     startTime,
                     System.currentTimeMillis()
@@ -216,7 +216,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
 
         // 6. 超时后仍未停止。
         return OperationResultDTO.failure(
-                OperationErrorCode.SENTINEL_FAILED,
+                BusinessCode.OPERATION_ERROR,
                 "Sentinel未在规定时间内完全停止",
                 startTime,
                 System.currentTimeMillis()

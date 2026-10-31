@@ -30,9 +30,9 @@ import java.util.Map;
 /**
  * 负责执行器与管理平台之间的 HTTP 通信
  * 与平台端 Controller 对应的路径：
- *   POST {@code /api/agent/register}
- *   POST {@code /api/agent/heartbeat}
- *   GET  {@code /api/agent/ping}
+ *   POST {@code /agent/register}
+ *   POST {@code /agent/heartbeat}
+ *   GET  {@code /agent/ping}
  *   POST {@code /metric/report}
 
  */
@@ -41,13 +41,13 @@ import java.util.Map;
 public class PlatformClient {
 
     /** 注册接口 */
-    private static final String PATH_REGISTER = "/api/agent/register";
+    private static final String PATH_REGISTER = "/agent/register";
 
     /** 心跳接口 */
-    private static final String PATH_HEARTBEAT = "/api/agent/heartbeat";
+    private static final String PATH_HEARTBEAT = "/agent/heartbeat";
 
     /** 执行器 ping 平台接口 */
-    private static final String PATH_PING = "/api/agent/ping";
+    private static final String PATH_PING = "/agent/ping";
 
     /** 指标上报接口 */
     private static final String PATH_METRIC_REPORT = "/metric/report";
@@ -140,7 +140,7 @@ public class PlatformClient {
     /**
      * 测量执行器到平台的 HTTP 往返延迟（毫秒）
      *
-     * 连续请求平台 {@code GET /api/agent/ping} 3 次，取平均值；
+     * 连续请求平台 {@code GET /agent/ping} 3 次，取平均值；
      * 全部失败时沿用上一次成功值，首次失败返回 0.00，不抛异常
      */
     public String measurePingLatency(String platformUrl) {
@@ -163,7 +163,8 @@ public class PlatformClient {
                     continue;
                 }
                 JSONObject json = JSON.parseObject(response.getBody());
-                if (json == null || json.getIntValue("code") != 0) {
+                if (json == null
+                        || json.getIntValue("code") != HttpStatus.OK.value()) {
                     continue;
                 }
                 totalMillis += elapsed / 1_000_000.0;
@@ -306,7 +307,7 @@ public class PlatformClient {
                     "平台响应格式异常（缺少 code 字段）: " + abbreviate(responseBody));
         }
         int code = json.getIntValue("code");
-        if (code != 0) {
+        if (code != HttpStatus.OK.value()) {
             String message = defaultMessage(json.getString("message"),
                     defaultMessage(json.getString("msg"), "平台返回错误码 " + code));
             throw new BusinessException(BusinessCode.OPERATION_ERROR.getCode(), message);

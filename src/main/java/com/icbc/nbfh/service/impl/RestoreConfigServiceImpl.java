@@ -2,7 +2,7 @@ package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.service.RestoreConfigService;
 
-import com.icbc.nbfh.common.Enum.OperationErrorCode;
+import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.common.constant.ValidationConstants;
 import com.icbc.nbfh.config.AgentProperties;
@@ -47,7 +47,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
         if (redisConfigSha256 == null
                 || sentinelConfigSha256 == null) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.CONFIG_INVALID,
+                    BusinessCode.OPERATION_ERROR,
                     "平台下发的Redis或Sentinel配置SHA256不正确",
                     startTime,
                     System.currentTimeMillis()
@@ -66,7 +66,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
                 || !StringUtils.hasText(sentinelBackupFile)
                 || !StringUtils.hasText(sentinelConfigFile)) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.CONFIG_INVALID,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis或Sentinel配置文件路径未配置完整",
                     startTime,
                     System.currentTimeMillis()
@@ -82,7 +82,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
         if (!FileValidationUtil.isReadableFile(redisBackupPath)
                 || !FileValidationUtil.isReadableFile(sentinelBackupPath)) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.PRECONDITION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis或Sentinel备份配置文件不存在或不可读",
                     startTime,
                     System.currentTimeMillis()
@@ -93,7 +93,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
         if (!FileValidationUtil.isWritableTarget(redisConfigPath)
                 || !FileValidationUtil.isWritableTarget(sentinelConfigPath)) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.CONFIG_INVALID,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis或Sentinel目标配置目录不可写",
                     startTime,
                     System.currentTimeMillis()
@@ -107,7 +107,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
                     || !sentinelConfigSha256.equalsIgnoreCase(
                     FileChecksumUtil.calculateSha256(sentinelBackupPath))) {
                 return OperationResultDTO.failure(
-                        OperationErrorCode.CHECKSUM_MISMATCH,
+                        BusinessCode.OPERATION_ERROR,
                         "Redis或Sentinel备份配置文件SHA256不一致",
                         startTime,
                         System.currentTimeMillis()
@@ -134,7 +134,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
 
         } catch (IOException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "配置文件恢复失败",
                     startTime,
                     System.currentTimeMillis()

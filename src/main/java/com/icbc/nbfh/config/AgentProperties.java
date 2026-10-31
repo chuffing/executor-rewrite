@@ -21,14 +21,8 @@ public class AgentProperties {
     /** 执行器名称。 */
     private String agentName;
 
-    /** 执行器外置配置文件路径。 */
-    private String configFile = "./application.yml";
-
     /** 本机对平台可见的 IPv4 地址，留空自动识别。 */
     private String hostIp;
-
-    /** 本机是否已有可采集的Redis和Sentinel。 */
-    private boolean redisReady = true;
 
     /** 未注册或未绑定时的注册重试间隔，毫秒。 */
     private long registerRetryInterval = 30000;
@@ -104,16 +98,33 @@ public class AgentProperties {
     public static class RedisConfig {
 
         /** Redis 连接配置。 */
+        @NotBlank(message = "Redis主机不能为空")
         private String host = CommonConstant.DEFAULT_LOCALHOST_IP;
         private int port = 6379;
+
+        @NotBlank(message = "Redis密码不能为空")
         private String password;
         private int db = 0;
         private int timeout = 2000;
 
         /** Redis 文件及服务配置。 */
         private String serviceName;
+
+        @NotBlank(message = "Redis配置文件路径不能为空")
         private String configFile;
+
+        /** Redis运行数据的受控根目录，启动脚本只允许在该目录下创建子目录。 */
+        @NotBlank(message = "Redis数据根目录不能为空")
         private String dataDir;
+
+        /** Redis运行日志的受控根目录。 */
+        @NotBlank(message = "Redis日志根目录不能为空")
+        private String logDir = "/opt/redis/logs";
+
+        /** 停止Redis和Sentinel时使用的redis-cli命令或绝对路径。 */
+        @NotBlank(message = "redis-cli路径不能为空")
+        private String cliBin = "redis-cli";
+
         private String backupFile;
 
         /** Redis 连接池。 */
@@ -137,10 +148,12 @@ public class AgentProperties {
         /** 是否采集 Sentinel 节点。 */
         private boolean enabled = true;
 
+        @NotBlank(message = "Sentinel主机不能为空")
         private String host = CommonConstant.DEFAULT_LOCALHOST_IP;
 
         private int port = 26379;
 
+        @NotBlank(message = "Sentinel密码不能为空")
         private String password;
 
         private int timeout = 2000;
@@ -154,7 +167,16 @@ public class AgentProperties {
          */
         private List<String> nodes = new ArrayList<>();
 
+        @NotBlank(message = "Sentinel配置文件路径不能为空")
         private String configFile;
+
+        /** Sentinel运行数据的受控根目录。 */
+        @NotBlank(message = "Sentinel数据根目录不能为空")
+        private String dataDir = "/opt/redis/data";
+
+        /** Sentinel运行日志的受控根目录。 */
+        @NotBlank(message = "Sentinel日志根目录不能为空")
+        private String logDir = "/opt/redis/logs";
 
         private String backupFile;
     }

@@ -1,7 +1,7 @@
 package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.command.FixedScriptExecutor;
-import com.icbc.nbfh.common.Enum.OperationErrorCode;
+import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.config.AgentProperties;
@@ -64,7 +64,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
 
             // 检查正式安装目录是否配置。
             if (!StringUtils.hasText(installDir)) {
-                return OperationResultDTO.failure(OperationErrorCode.CONFIG_INVALID,
+                return OperationResultDTO.failure(BusinessCode.OPERATION_ERROR,
                         "Redis版本安装目录未配置", startTime, System.currentTimeMillis());
             }
 
@@ -72,7 +72,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
 
             // ======== 2. 检查源码包文件 ========
             if (!Files.isRegularFile(packagePath)) {
-                return OperationResultDTO.failure(OperationErrorCode.PRECONDITION_FAILED,
+                return OperationResultDTO.failure(BusinessCode.OPERATION_ERROR,
                         "Redis源码包不存在或不是普通文件", startTime, System.currentTimeMillis());
             }
 
@@ -82,7 +82,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
             String actualSha256 = FileChecksumUtil.calculateSha256(packagePath);
             // 将本地实际摘要与平台提供的摘要比较。
             if (!expectedSha256.equalsIgnoreCase(actualSha256)) {
-                return OperationResultDTO.failure(OperationErrorCode.CHECKSUM_MISMATCH,
+                return OperationResultDTO.failure(BusinessCode.OPERATION_ERROR,
                         "Redis源码包摘要不一致", startTime, System.currentTimeMillis());
             }
 
@@ -100,7 +100,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
             // 检查Shell是否执行超时。
             if (commandResult.isTimedOut()) {
                 return OperationResultDTO.failure(
-                        OperationErrorCode.COMMAND_TIMEOUT,
+                        BusinessCode.OPERATION_ERROR,
                         "Redis源码编译及版本部署超时",
                         startTime,
                         System.currentTimeMillis());
@@ -108,7 +108,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
             // 检查Shell退出码是否为0。
             if (commandResult.getExitCode() != 0) {
                 return OperationResultDTO.failure(
-                        OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                        BusinessCode.OPERATION_ERROR,
                         "Redis源码编译及版本部署失败",
                         startTime,
                         System.currentTimeMillis());
@@ -120,28 +120,28 @@ public class DeployVersionServiceImpl implements DeployVersionService {
 
         } catch (FileNotFoundException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_NOT_FOUND,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis版本部署脚本不存在",
                     startTime,
                     System.currentTimeMillis());
 
         } catch (InvalidPathException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.CONFIG_INVALID,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis部署相关路径格式不正确",
                     startTime,
                     System.currentTimeMillis());
 
         } catch (InterruptedException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.UNKNOWN_ERROR,
+                    BusinessCode.SYSTEM_ERROR,
                     "Redis版本部署被中断",
                     startTime,
                     System.currentTimeMillis());
 
         } catch (IOException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis目录检查、源码包读取、编译或部署失败",
                     startTime,
                     System.currentTimeMillis());

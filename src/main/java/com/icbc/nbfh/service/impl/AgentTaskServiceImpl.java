@@ -1,9 +1,9 @@
 package com.icbc.nbfh.service.impl;
 
 import com.alibaba.fastjson.JSON;
-import com.icbc.nbfh.common.Enum.OperationErrorCode;
 import com.icbc.nbfh.common.Enum.OperationType;
 import com.icbc.nbfh.common.Enum.TaskResultStatus;
+import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.entity.DTO.PlatformTaskDTO;
 import com.icbc.nbfh.entity.DTO.TaskResultReportDTO;
@@ -44,8 +44,6 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
     private final RestoreConfigService restoreConfigService;
 
-    private final TopologyVerifyService topologyVerifyService;
-
     private final DeployConfigService deployConfigService;
 
     private final DeployVersionService deployVersionService;
@@ -55,8 +53,6 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     private final TaskResultReportService taskResultReportService;
 
     private final RegisterService registerService;
-
-    private final RedisReadyConfigUpdater redisReadyConfigUpdater;
 
 
     /**
@@ -108,15 +104,6 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                             task.getParams());
                     break;
 
-                case VERIFY_TOPOLOGY:
-                    result = topologyVerifyService.verifyTopology();
-
-                    // 新服务器拓扑验收成功后，允许执行器采集Redis数据。
-                    if (result.isSuccess()) {
-                        redisReadyConfigUpdater.markReadyIfNecessary();
-                    }
-                    break;
-
                 case DEPLOY_CONFIG:
                     result = deployConfigService.deployConfig(task.getParams());
                     break;
@@ -136,7 +123,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         } catch (Exception e) {
             log.error("任务执行异常，taskNo={}", task.getTaskNo(), e);
             result = OperationResultDTO.failure(
-                    OperationErrorCode.UNKNOWN_ERROR,
+                    BusinessCode.SYSTEM_ERROR,
                     "任务执行异常：" + e.getMessage(),
                     startTime,
                     System.currentTimeMillis()

@@ -1,5 +1,71 @@
 #!/bin/bash
 set -euo pipefail
+umask 077
+
+fail() {
+    echo "$1" >&2
+    exit 1
+}
+
+# 读取配置中最后一个生效的简单路径指令。
+# 平台生成的路径不包含空白；拒绝复杂写法，避免脚本错误解析后创建意外目录。
+read_config_path() {
+    local directive="$1"
+    local file="$2"
+    awk -v key="$directive" '
+        /^[[:space:]]*#/ { next }
+        $1 == key {
+            $1 = ""
+            sub(/^[[:space:]]+/, "")
+            value = $0
+        }
+        END { if (value != "") print value }
+    ' "$file"
+}
+
+# 在受控根目录下幂等创建运行目录，禁止配置指向任意系统路径。
+ensure_controlled_directory() {
+    local purpose="$1"
+    local requested_path="$2"
+    local allowed_root="$3"
+
+    [[ -n "$requested_path" ]] || fail "${purpose}未配置"
+    [[ "$requested_path" == /* ]] || fail "${purpose}必须使用绝对路径：$requested_path"
+    [[ "$requested_path" != *[[:space:]]* ]] || fail "${purpose}不能包含空白字符：$requested_path"
+    [[ "$allowed_root" == /* ]] || fail "${purpose}受控根目录必须使用绝对路径：$allowed_root"
+
+    local normalized_root
+    local normalized_path
+    normalized_root="$(readlink -m -- "$allowed_root")" || fail "${purpose}受控根目录无法解析：$allowed_root"
+    normalized_path="$(readlink -m -- "$requested_path")" || fail "${purpose}无法解析：$requested_path"
+
+    [[ "$normalized_root" != / ]] || fail "${purpose}受控根目录不能是根目录"
+    [[ "$normalized_path" == "$normalized_root" || "$normalized_path" == "$normalized_root"/* ]] \
+        || fail "${purpose}必须位于受控根目录 $normalized_root 下：$normalized_path"
+
+    mkdir -p -- "$normalized_path" || fail "无法创建${purpose}：$normalized_path"
+    [[ -d "$normalized_path" && -w "$normalized_path" && -x "$normalized_path" ]] \
+        || fail "${purpose}不可写：$normalized_path"
+}
+
+# 日志输出为空字符串时表示写标准输出；配置文件路径则确保其父目录存在。
+ensure_log_directory() {
+    local logfile="$1"
+    local log_root="$2"
+    [[ -n "$logfile" ]] || return 0
+    ensure_controlled_directory "Redis日志目录" "$(dirname -- "$logfile")" "$log_root"
+}
+
+# PID目录属于系统运行目录，只检查，不由业务脚本创建。
+validate_pid_directory() {
+    local pidfile="$1"
+    [[ -n "$pidfile" ]] || return 0
+    [[ "$pidfile" == /* ]] || fail "Redis pidfile必须使用绝对路径：$pidfile"
+    local pid_directory
+    pid_directory="$(dirname -- "$pidfile")"
+    [[ -d "$pid_directory" && -w "$pid_directory" && -x "$pid_directory" ]] \
+        || fail "Redis PID目录不存在或不可写：$pid_directory"
+}
 
 # current路径由Java传入，来自执行器已有的currentDir配置。
 if [[ $# -ne 1 ]]; then
@@ -16,6 +82,17 @@ if [[ ! -f "$config_file" || ! -r "$config_file" ]]; then
     echo "Redis配置文件不存在或不可读" >&2
     exit 1
 fi
+
+# Redis会在启动时切换到dir目录；运行目录不存在会直接启动失败。
+redis_data_dir="$(read_config_path dir "$config_file")"
+redis_logfile="$(read_config_path logfile "$config_file")"
+redis_pidfile="$(read_config_path pidfile "$config_file")"
+ensure_controlled_directory \
+    "Redis运行目录" \
+    "$redis_data_dir" \
+    "${REDIS_DATA_ROOT:-/opt/redis/data}"
+ensure_log_directory "$redis_logfile" "${REDIS_LOG_ROOT:-/opt/redis/logs}"
+validate_pid_directory "$redis_pidfile"
 
 # 校验current软链接，解析本次启动使用的版本目录。
 current_dir="$1"

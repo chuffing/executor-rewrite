@@ -2,7 +2,7 @@ package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.service.StopRedisService;
 
-import com.icbc.nbfh.common.Enum.OperationErrorCode;
+import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.CommandResultDTO;
@@ -44,7 +44,7 @@ public class StopRedisServiceImpl implements StopRedisService {
 
         } catch (IOException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.HEALTH_CHECK_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis停止前状态检查失败",
                     startTime,
                     System.currentTimeMillis()
@@ -63,7 +63,7 @@ public class StopRedisServiceImpl implements StopRedisService {
 
         } catch (FileNotFoundException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_NOT_FOUND,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis停止脚本不存在",
                     startTime,
                     System.currentTimeMillis()
@@ -71,7 +71,7 @@ public class StopRedisServiceImpl implements StopRedisService {
 
         } catch (InterruptedException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.UNKNOWN_ERROR,
+                    BusinessCode.SYSTEM_ERROR,
                     "Redis停止操作被中断",
                     startTime,
                     System.currentTimeMillis()
@@ -79,7 +79,7 @@ public class StopRedisServiceImpl implements StopRedisService {
 
         } catch (IOException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis停止脚本无法执行",
                     startTime,
                     System.currentTimeMillis()
@@ -95,7 +95,7 @@ public class StopRedisServiceImpl implements StopRedisService {
 
         } catch (InterruptedException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.UNKNOWN_ERROR,
+                    BusinessCode.SYSTEM_ERROR,
                     "等待Redis停止时被中断",
                     startTime,
                     System.currentTimeMillis()
@@ -103,7 +103,7 @@ public class StopRedisServiceImpl implements StopRedisService {
 
         } catch (IOException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.HEALTH_CHECK_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis停止状态检查失败",
                     startTime,
                     System.currentTimeMillis()
@@ -118,7 +118,7 @@ public class StopRedisServiceImpl implements StopRedisService {
         // 5. Redis没有停止，再根据脚本执行结果返回具体失败原因。
         if (commandResult.isTimedOut()) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_TIMEOUT,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis停止脚本执行超时，并且Redis仍未停止",
                     startTime,
                     System.currentTimeMillis()
@@ -127,7 +127,7 @@ public class StopRedisServiceImpl implements StopRedisService {
 
         if (commandResult.getExitCode() != 0) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis停止脚本执行失败，并且Redis仍未停止",
                     startTime,
                     System.currentTimeMillis()
@@ -208,7 +208,7 @@ public class StopRedisServiceImpl implements StopRedisService {
         // 5. 超时后仍未停止
         if (!pingSuccess && portOpen) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.PORT_OCCUPIED,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis无法PING，但端口仍然开放",
                     startTime,
                     System.currentTimeMillis()
@@ -216,7 +216,7 @@ public class StopRedisServiceImpl implements StopRedisService {
         }
 
         return OperationResultDTO.failure(
-                OperationErrorCode.HEALTH_CHECK_FAILED,
+                BusinessCode.OPERATION_ERROR,
                 "Redis未在规定时间内完全停止",
                 startTime,
                 System.currentTimeMillis()

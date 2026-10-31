@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
  *       {@code master_last_io_seconds_ago}，主节点为 0；
  *   {@code memUs}：Redis 内存使用量（GB），由 INFO used_memory（字节）换算；
  *   {@code pingLatency}：执行器 ping 平台的 HTTP 往返延迟（毫秒），
- *       由采集服务调用平台 {@code /api/agent/ping} 后回填
+ *       由采集服务调用平台 {@code /agent/ping} 后回填
  */
 @Slf4j
 @Component

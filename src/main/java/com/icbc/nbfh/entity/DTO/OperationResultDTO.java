@@ -1,6 +1,6 @@
 package com.icbc.nbfh.entity.DTO;
 
-import com.icbc.nbfh.common.Enum.OperationErrorCode;
+import com.icbc.nbfh.common.exception.BusinessCode;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -20,7 +20,7 @@ public class OperationResultDTO {
     /**
      * 失败错误码，成功时为空。
      */
-    private OperationErrorCode errorCode;
+    private Integer errorCode;
 
     /**
      * 执行结果说明。
@@ -50,13 +50,13 @@ public class OperationResultDTO {
         );
     }
 
-    public static OperationResultDTO failure(OperationErrorCode errorCode,
+    public static OperationResultDTO failure(BusinessCode businessCode,
                                              String message,
                                              long startTime,
                                              long endTime) {
         return new OperationResultDTO(
                 false,
-                errorCode,
+                businessCode.getCode(),
                 message,
                 startTime,
                 endTime

@@ -1,5 +1,66 @@
 #!/bin/bash
 set -euo pipefail
+umask 077
+
+fail() {
+    echo "$1" >&2
+    exit 1
+}
+
+read_config_path() {
+    local directive="$1"
+    local file="$2"
+    awk -v key="$directive" '
+        /^[[:space:]]*#/ { next }
+        $1 == key {
+            $1 = ""
+            sub(/^[[:space:]]+/, "")
+            value = $0
+        }
+        END { if (value != "") print value }
+    ' "$file"
+}
+
+ensure_controlled_directory() {
+    local purpose="$1"
+    local requested_path="$2"
+    local allowed_root="$3"
+
+    [[ -n "$requested_path" ]] || fail "${purpose}未配置"
+    [[ "$requested_path" == /* ]] || fail "${purpose}必须使用绝对路径：$requested_path"
+    [[ "$requested_path" != *[[:space:]]* ]] || fail "${purpose}不能包含空白字符：$requested_path"
+    [[ "$allowed_root" == /* ]] || fail "${purpose}受控根目录必须使用绝对路径：$allowed_root"
+
+    local normalized_root
+    local normalized_path
+    normalized_root="$(readlink -m -- "$allowed_root")" || fail "${purpose}受控根目录无法解析：$allowed_root"
+    normalized_path="$(readlink -m -- "$requested_path")" || fail "${purpose}无法解析：$requested_path"
+
+    [[ "$normalized_root" != / ]] || fail "${purpose}受控根目录不能是根目录"
+    [[ "$normalized_path" == "$normalized_root" || "$normalized_path" == "$normalized_root"/* ]] \
+        || fail "${purpose}必须位于受控根目录 $normalized_root 下：$normalized_path"
+
+    mkdir -p -- "$normalized_path" || fail "无法创建${purpose}：$normalized_path"
+    [[ -d "$normalized_path" && -w "$normalized_path" && -x "$normalized_path" ]] \
+        || fail "${purpose}不可写：$normalized_path"
+}
+
+ensure_log_directory() {
+    local logfile="$1"
+    local log_root="$2"
+    [[ -n "$logfile" ]] || return 0
+    ensure_controlled_directory "Sentinel日志目录" "$(dirname -- "$logfile")" "$log_root"
+}
+
+validate_pid_directory() {
+    local pidfile="$1"
+    [[ -n "$pidfile" ]] || return 0
+    [[ "$pidfile" == /* ]] || fail "Sentinel pidfile必须使用绝对路径：$pidfile"
+    local pid_directory
+    pid_directory="$(dirname -- "$pidfile")"
+    [[ -d "$pid_directory" && -w "$pid_directory" && -x "$pid_directory" ]] \
+        || fail "Sentinel PID目录不存在或不可写：$pid_directory"
+}
 
 # current路径由Java传入，来自执行器已有的currentDir配置。
 if [[ $# -ne 1 ]]; then
@@ -21,6 +82,23 @@ if [[ ! -w "$config_file" ]]; then
     echo "Sentinel配置文件不可写" >&2
     exit 1
 fi
+# Sentinel重写配置时需要在同目录创建临时文件并执行替换。
+config_directory="$(dirname -- "$config_file")"
+if [[ ! -d "$config_directory" || ! -w "$config_directory" || ! -x "$config_directory" ]]; then
+    echo "Sentinel配置文件父目录不存在或不可写：$config_directory" >&2
+    exit 1
+fi
+
+# Sentinel同样会切换到dir目录，并可能写日志和PID文件。
+sentinel_data_dir="$(read_config_path dir "$config_file")"
+sentinel_logfile="$(read_config_path logfile "$config_file")"
+sentinel_pidfile="$(read_config_path pidfile "$config_file")"
+ensure_controlled_directory \
+    "Sentinel运行目录" \
+    "$sentinel_data_dir" \
+    "${SENTINEL_DATA_ROOT:-/opt/redis/data}"
+ensure_log_directory "$sentinel_logfile" "${SENTINEL_LOG_ROOT:-/opt/redis/logs}"
+validate_pid_directory "$sentinel_pidfile"
 
 # 校验current软链接，解析本次启动使用的版本目录。
 current_dir="$1"

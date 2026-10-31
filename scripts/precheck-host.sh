@@ -12,7 +12,7 @@ if (( BASH_VERSINFO[0] < 4 )); then
 fi
 
 # 固定脚本使用的系统命令，不要求安装Python或systemd。
-commands=(uname bash tar gzip awk readlink stat id head od chmod cp mv ln mkdir mktemp rm rmdir timeout grep)
+commands=(uname bash tar gzip awk dirname readlink stat id head od chmod cp mv ln mkdir mktemp rm rmdir timeout grep)
 for command_name in "${commands[@]}"; do
     if ! command -v -- "$command_name" >/dev/null 2>&1; then
         echo "缺少脚本运行所需命令：$command_name" >&2

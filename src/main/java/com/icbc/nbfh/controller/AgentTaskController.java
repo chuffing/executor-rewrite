@@ -290,7 +290,6 @@ public class AgentTaskController {
             case STOP_REDIS:
             case START_SENTINEL:
             case STOP_SENTINEL:
-            case VERIFY_TOPOLOGY:
                 // 以上操作不接收任务参数。
                 if (request.getParams() != null && !request.getParams().isEmpty()) {
                     throw new ParameterException(

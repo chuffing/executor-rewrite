@@ -2,7 +2,7 @@ package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.service.StartSentinelService;
 
-import com.icbc.nbfh.common.Enum.OperationErrorCode;
+import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.CommandResultDTO;
@@ -38,7 +38,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
 
         if (serviceName == null || serviceName.trim().isEmpty()) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.CONFIG_INVALID,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel监控服务名称未配置",
                     startTime,
                     System.currentTimeMillis()
@@ -72,7 +72,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
 
         } catch (FileNotFoundException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_NOT_FOUND,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel启动脚本不存在",
                     startTime,
                     System.currentTimeMillis()
@@ -80,7 +80,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
 
         } catch (InterruptedException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.UNKNOWN_ERROR,
+                    BusinessCode.SYSTEM_ERROR,
                     "Sentinel启动操作被中断",
                     startTime,
                     System.currentTimeMillis()
@@ -88,7 +88,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
 
         } catch (IOException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel启动脚本无法执行",
                     startTime,
                     System.currentTimeMillis()
@@ -104,7 +104,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
 
         } catch (InterruptedException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.UNKNOWN_ERROR,
+                    BusinessCode.SYSTEM_ERROR,
                     "等待Sentinel启动时被中断",
                     startTime,
                     System.currentTimeMillis()
@@ -119,7 +119,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
         // 6. Sentinel没有正常运行，再根据脚本执行结果返回具体失败原因。
         if (commandResult.isTimedOut()) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_TIMEOUT,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel启动脚本执行超时，并且Sentinel仍未正常运行",
                     startTime,
                     System.currentTimeMillis()
@@ -128,7 +128,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
 
         if (commandResult.getExitCode() != 0) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Sentinel启动脚本执行失败，并且Sentinel仍未正常运行",
                     startTime,
                     System.currentTimeMillis()
@@ -175,7 +175,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
 
         // 3. 超时后仍未恢复。
         return OperationResultDTO.failure(
-                OperationErrorCode.SENTINEL_FAILED,
+                BusinessCode.OPERATION_ERROR,
                 "Sentinel未在规定时间内恢复服务",
                 startTime,
                 System.currentTimeMillis()

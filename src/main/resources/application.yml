@@ -22,9 +22,9 @@ agent:
   # 平台通信：地址、注册码、token 持久化文件
   platform:
     # 平台端地址，必须从生产服务器可访问，例如 http://10.0.0.10:8100
-    url: ${AGENT_PLATFORM_URL:${PLATFORM_URL:http://localhost:8100}}
+    url: ${AGENT_PLATFORM_URL:${PLATFORM_URL:http://172.20.10.2:8100}}
     # 平台预设注册码，需与平台端 platform.register-code 一致
-    register-code: ${AGENT_REGISTER_CODE:${REGISTER_CODE:}}
+    register-code: ${AGENT_REGISTER_CODE:${REGISTER_CODE:Danuvius}}
     # 本地注册凭证文件，注册成功后保存，重启不重复注册
     token-file: ${AGENT_TOKEN_FILE:${TOKEN_FILE:./agent-token.dat}}
 
@@ -33,13 +33,6 @@ agent:
 
   # 执行器对平台可见的 IPv4，留空自动识别（优先默认路由网卡）
   host-ip: ${AGENT_HOST_IP:}
-
-  # 执行器外置配置文件；服务器切换成功后用于持久化redisReady。
-  config-file: ${AGENT_CONFIG_FILE:./application.yml}
-
-  # 部署意图标记：true表示本机应有可采集的Redis和Sentinel。
-  # 实际注册时执行器仍会 PING Redis 探测；连接异常时上传 redisReady=false。
-  redisReady: true
 
   # 未注册或已注册未绑定时的二次注册重试间隔（毫秒）
   register-retry-interval: ${AGENT_REGISTER_RETRY_INTERVAL:30000}
@@ -80,18 +73,22 @@ agent:
 #    host: ${REDIS_HOST:127.0.0.1}
     host: ${REDIS_HOST:127.0.0.1}
     port: ${REDIS_PORT:6379}
-    password: ${REDIS_PASSWORD:}
+    password: ${REDIS_PASSWORD:RedisTest123!}
     db: ${REDIS_DB:0}
     # Redis连接超时，单位毫秒。
     timeout: ${REDIS_TIMEOUT:2000}
 
     service-name: ${REDIS_SERVICE_NAME:}
     # Redis正式配置文件，生产环境可通过环境变量覆盖。
-    # 启动脚本也读取REDIS_CONFIG_FILE，单独覆盖YAML时须同步进程环境变量。
+    # Java执行脚本时会把这里的最终值注入子进程，无需服务器手工配置环境变量。
     config-file: ${REDIS_CONFIG_FILE:/opt/redis/conf/redis.conf}
-    # 预检查使用的数据目录，须事先存在。
+    # 预检查使用的数据目录，同时作为启动脚本允许创建运行子目录的受控根目录。
     # Redis实际数据位置仍由redis.conf中的dir等参数决定，两者须保持一致。
     data-dir: ${REDIS_DATA_DIR:/opt/redis/data}
+    # redis.conf中的logfile父目录必须位于该受控根目录下。
+    log-dir: /opt/redis/logs
+    # 停止Redis和Sentinel时使用；在PATH中可直接写redis-cli，否则填写绝对路径。
+    cli-bin: redis-cli
     # Redis可信备份配置；DEPLOY_CONFIG成功时同步更新。
     backup-file: ${REDIS_BACKUP_FILE:/opt/redis/backup/redis.conf}
 
@@ -108,10 +105,10 @@ agent:
 #    host: ${SENTINEL_HOST:127.0.0.1}
     host: ${SENTINEL_HOST:127.0.0.1}
     port: ${SENTINEL_PORT:26379}
-    password: ${SENTINEL_PASSWORD:}
+    password: ${SENTINEL_PASSWORD:RedisTest123!}
 
     # Sentinel监控的主从组名称，同时作为 SENTINEL sentinels 的 masterName
-    service-name: ${SENTINEL_SERVICE_NAME:${SENTINEL_MASTER_NAME:}}
+    service-name: ${SENTINEL_SERVICE_NAME:${SENTINEL_MASTER_NAME:mymaster}}
     # 多个地址用逗号分隔，例如 10.0.0.11:26379,10.0.0.12:26379,10.0.0.13:26379
     # 为空时只使用上面的 host:port；任一可达即可发现全部哨兵
     nodes: ${SENTINEL_NODES:}
@@ -119,8 +116,12 @@ agent:
     # Sentinel连接超时，单位毫秒。
     timeout: ${SENTINEL_TIMEOUT:2000}
     # Sentinel正式配置文件，生产环境可通过环境变量覆盖。
-    # 启动脚本也读取SENTINEL_CONFIG_FILE，配置文件须允许Sentinel正常重写。
+    # Java执行脚本时会把这里的最终值注入子进程，无需服务器手工配置环境变量。
+    # 配置文件须允许Sentinel正常重写。
     config-file: ${SENTINEL_CONFIG_FILE:/opt/redis/conf/sentinel.conf}
+    # sentinel.conf中的dir和logfile必须位于下面两个受控根目录下。
+    data-dir: /opt/redis/data
+    log-dir: /opt/redis/logs
     # Sentinel可信备份配置；DEPLOY_CONFIG成功时同步更新。
     backup-file: ${SENTINEL_BACKUP_FILE:/opt/redis/backup/sentinel.conf}
 

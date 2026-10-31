@@ -16,6 +16,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -53,11 +54,11 @@ public class FixedScriptExecutor {
                                           String... arguments)
             throws IOException, InterruptedException {
 
-        // 1. 校验并获取脚本文件
+        // 1. 校验参数和脚本路径，返回合法的脚本文件。
         File scriptFile = resolveAndValidateScript(scriptType, timeoutSeconds);
-
         // 2. 创建Shell命令，参数由ProcessBuilder独立传递。
         List<String> command = new ArrayList<>();
+        // 使用Bash解释器执行脚本。
         command.add("/bin/bash");
         command.add(scriptFile.getAbsolutePath());
 
@@ -76,6 +77,10 @@ public class FixedScriptExecutor {
 
         // 设置脚本工作目录
         processBuilder.directory(scriptFile.getParentFile());
+
+        // application.yml是脚本配置的唯一来源。仅向本次子进程注入对应
+        // Redis或Sentinel配置，不要求服务器预先配置系统环境变量。
+        configureScriptEnvironment(processBuilder, scriptType);
 
         // 3. 启动进程
         Process process = processBuilder.start();
@@ -158,6 +163,75 @@ public class FixedScriptExecutor {
 
 
     /**
+     * 将Spring已解析的最终配置写入脚本子进程环境。
+     *
+     * <p>这里覆盖的是单个ProcessBuilder的环境，不会修改执行器进程或
+     * 操作系统的全局环境变量。</p>
+     */
+    void configureScriptEnvironment(
+            ProcessBuilder processBuilder,
+            ScriptType scriptType) {
+
+        Map<String, String> environment = processBuilder.environment();
+
+        switch (scriptType) {
+            case START_REDIS:
+            case STOP_REDIS:
+                configureRedisEnvironment(environment);
+                break;
+
+            case START_SENTINEL:
+            case STOP_SENTINEL:
+                configureSentinelEnvironment(environment);
+                break;
+
+            default:
+                // 其他脚本只使用命令参数和固定配置，不需要连接凭证。
+                break;
+        }
+    }
+
+
+    /** 向Redis启停脚本注入运行配置。 */
+    private void configureRedisEnvironment(Map<String, String> environment) {
+        AgentProperties.RedisConfig redis = agentProperties.getRedis();
+
+        environment.put("REDIS_HOST", redis.getHost());
+        environment.put("REDIS_PORT", String.valueOf(redis.getPort()));
+        environment.put("REDIS_PASSWORD", redis.getPassword());
+        environment.put("REDIS_CONFIG_FILE", redis.getConfigFile());
+        environment.put("REDIS_DATA_ROOT", redis.getDataDir());
+        environment.put("REDIS_LOG_ROOT", redis.getLogDir());
+        environment.put("REDIS_CLI_BIN", redis.getCliBin());
+    }
+
+
+    /** 向Sentinel启停脚本注入运行配置。 */
+    private void configureSentinelEnvironment(
+            Map<String, String> environment) {
+        AgentProperties.SentinelConfig sentinel =
+                agentProperties.getSentinel();
+
+        environment.put("SENTINEL_HOST", sentinel.getHost());
+        environment.put(
+                "SENTINEL_PORT",
+                String.valueOf(sentinel.getPort())
+        );
+        environment.put("SENTINEL_PASSWORD", sentinel.getPassword());
+        environment.put(
+                "SENTINEL_CONFIG_FILE",
+                sentinel.getConfigFile()
+        );
+        environment.put("SENTINEL_DATA_ROOT", sentinel.getDataDir());
+        environment.put("SENTINEL_LOG_ROOT", sentinel.getLogDir());
+        environment.put(
+                "REDIS_CLI_BIN",
+                agentProperties.getRedis().getCliBin()
+        );
+    }
+
+
+    /**
      * 校验参数和脚本路径，返回合法的脚本文件。
      */
     private File resolveAndValidateScript(
@@ -169,52 +243,42 @@ public class FixedScriptExecutor {
         if (scriptType == null) {
             throw new IllegalArgumentException("脚本类型不能为空");
         }
-
         // 校验超时时间
         if (timeoutSeconds <= 0) {
             throw new IllegalArgumentException("脚本执行超时时间必须大于0");
         }
-
         // 检查脚本目录是否配置
         String scriptDir = agentProperties.getOperation().getScriptDir();
-
         if (scriptDir == null || scriptDir.trim().isEmpty()) {
             throw new IllegalArgumentException("Shell脚本目录未配置");
         }
-
         // 获取脚本目录
         File directory = new File(scriptDir.trim()).getCanonicalFile();
-
         // 检查脚本目录是否存在
         if (!directory.isDirectory()) {
             throw new FileNotFoundException("脚本目录不存在");
         }
-
         // 获取脚本文件
         File scriptFile = new File(
                 directory,
                 scriptType.getFileName()
         ).getCanonicalFile();
-
         // 检查脚本是否位于指定目录
         if (!directory.equals(scriptFile.getParentFile())) {
             throw new IllegalArgumentException("脚本路径不合法");
         }
-
         // 检查脚本文件是否存在
         if (!scriptFile.isFile()) {
             throw new FileNotFoundException(
                     "脚本文件不存在：" + scriptType.getFileName()
             );
         }
-
         // 检查脚本是否可读
         if (!scriptFile.canRead()) {
             throw new IOException(
                     "脚本文件不可读：" + scriptType.getFileName()
             );
         }
-
         return scriptFile;
     }
 

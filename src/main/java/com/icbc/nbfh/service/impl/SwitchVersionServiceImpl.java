@@ -1,7 +1,7 @@
 package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.command.FixedScriptExecutor;
-import com.icbc.nbfh.common.Enum.OperationErrorCode;
+import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.config.AgentProperties;
@@ -44,7 +44,7 @@ public class SwitchVersionServiceImpl implements SwitchVersionService {
         // 检查安装目录是否配置。
         if (!StringUtils.hasText(installDir)) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.CONFIG_INVALID,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis版本安装目录未配置",
                     startTime,
                     System.currentTimeMillis()
@@ -53,7 +53,7 @@ public class SwitchVersionServiceImpl implements SwitchVersionService {
         // 检查current软链接路径是否配置。
         if (!StringUtils.hasText(currentDir)) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.CONFIG_INVALID,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis当前版本软链接路径未配置",
                     startTime,
                     System.currentTimeMillis()
@@ -75,7 +75,7 @@ public class SwitchVersionServiceImpl implements SwitchVersionService {
                 log.error("Redis版本切换脚本执行超时，stdout={}，stderr={}",
                         commandResult.getStdout(), commandResult.getStderr());
                 return OperationResultDTO.failure(
-                        OperationErrorCode.COMMAND_TIMEOUT,
+                        BusinessCode.OPERATION_ERROR,
                         "Redis版本切换脚本执行超时，请核对current实际指向",
                         startTime,
                         System.currentTimeMillis()
@@ -87,7 +87,7 @@ public class SwitchVersionServiceImpl implements SwitchVersionService {
                 log.error("Redis版本切换脚本执行失败，stdout={}，stderr={}",
                         commandResult.getStdout(), commandResult.getStderr());
                 return OperationResultDTO.failure(
-                        OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                        BusinessCode.OPERATION_ERROR,
                         "Redis版本切换脚本执行失败，请查看执行器日志",
                         startTime,
                         System.currentTimeMillis()
@@ -106,7 +106,7 @@ public class SwitchVersionServiceImpl implements SwitchVersionService {
 
         } catch (FileNotFoundException e) {
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_NOT_FOUND,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis版本切换脚本不存在",
                     startTime,
                     System.currentTimeMillis()
@@ -115,7 +115,7 @@ public class SwitchVersionServiceImpl implements SwitchVersionService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return OperationResultDTO.failure(
-                    OperationErrorCode.UNKNOWN_ERROR,
+                    BusinessCode.SYSTEM_ERROR,
                     "Redis版本切换被中断，请核对current实际指向",
                     startTime,
                     System.currentTimeMillis()
@@ -124,7 +124,7 @@ public class SwitchVersionServiceImpl implements SwitchVersionService {
         } catch (IOException e) {
             log.error("Redis版本切换脚本无法执行，targetVersion={}", targetVersion, e);
             return OperationResultDTO.failure(
-                    OperationErrorCode.COMMAND_EXECUTION_FAILED,
+                    BusinessCode.OPERATION_ERROR,
                     "Redis版本切换脚本无法执行",
                     startTime,
                     System.currentTimeMillis()
