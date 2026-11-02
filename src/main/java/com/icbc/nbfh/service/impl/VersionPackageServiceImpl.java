@@ -36,27 +36,19 @@ public class VersionPackageServiceImpl implements VersionPackageService {
                                 MultipartFile file) throws IOException {
 
         // ======== 1. 读取源码包目录 ========
-
         // 获取源码包存放目录。
         String packageDir = agentProperties.getOperation().getPackageDir();
-        if (packageDir == null || packageDir.trim().isEmpty()) {
-            throw new IllegalStateException("Redis源码包目录未配置");
-        }
-
-        // 将字符串形式的目录转换为Path对象。
-        Path packageDirectory = Paths.get(packageDir.trim()).toRealPath();
+        // 固定根目录已在执行器启动时完成校验。
+        Path packageDirectory = Paths.get(packageDir);
 
         // ======== 2. 创建staging暂存目录 ========
-
         // 在安装包根目录下面拼接staging子目录。
         Path stagingDirectory = packageDirectory.resolve(
                 VersionPackageConstants.STAGING_DIRECTORY_NAME);
-
         // 如果staging目录不存在，就创建。
         Files.createDirectories(stagingDirectory);
 
         // ======== 3. 创建独立上传目录 ========
-
         // 在staging下面创建本次上传专用的临时目录。
         Path requestDirectory = Files.createTempDirectory(
                 stagingDirectory, taskNo + "-");
@@ -69,7 +61,6 @@ public class VersionPackageServiceImpl implements VersionPackageService {
 
         // 记录本次上传流程是否成功。
         boolean completed = false;
-
         try {
             // 2. 流式写入，按实际收到的字节数限制50 MiB。
             long receivedSize = 0;
@@ -91,7 +82,6 @@ public class VersionPackageServiceImpl implements VersionPackageService {
             }
 
             // ======== 5. 检查文件大小 ========
-
             // 如果实际没有读取到任何字节，说明收到的是空文件。
             if (receivedSize == 0) {
                 throw new ParameterException(
@@ -118,7 +108,6 @@ public class VersionPackageServiceImpl implements VersionPackageService {
             }
 
             // ======== 7. 生成正式暂存文件 ========
-
             // 将文件从临时名称移动到正式暂存名称。
             Files.move(temporaryPath, packagePath);
 
@@ -127,8 +116,8 @@ public class VersionPackageServiceImpl implements VersionPackageService {
 
             // 返回校验完成的安装包路径。
             return packagePath;
-        } finally {
 
+        } finally {
             // ======== 8. 失败清理 ========
             if (!completed) {
                 // 同时清理两种文件名，覆盖异常发生在移动期间的情况。
@@ -148,8 +137,8 @@ public class VersionPackageServiceImpl implements VersionPackageService {
         try {
             // 清理只允许发生在配置的暂存目录下，不接受任意服务器路径。
             Path stagingDirectory = Paths.get(
-                    agentProperties.getOperation().getPackageDir().trim())
-                    .toRealPath().resolve(VersionPackageConstants.STAGING_DIRECTORY_NAME);
+                    agentProperties.getOperation().getPackageDir())
+                    .resolve(VersionPackageConstants.STAGING_DIRECTORY_NAME);
             if (requestDirectory == null) {
                 throw new IOException("缺少源码包暂存目录");
             }

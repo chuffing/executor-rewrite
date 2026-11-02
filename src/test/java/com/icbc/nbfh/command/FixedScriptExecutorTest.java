@@ -4,13 +4,21 @@ import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.config.AgentProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 验证脚本子进程只使用application.yml绑定后的最终配置。 */
 class FixedScriptExecutorTest {
+
+    @TempDir
+    Path temporaryDirectory;
 
     private AgentProperties properties;
     private FixedScriptExecutor executor;
@@ -84,5 +92,24 @@ class FixedScriptExecutorTest {
                 environment.get("SENTINEL_LOG_ROOT"));
         assertEquals("/opt/redis/current/bin/redis-cli",
                 environment.get("REDIS_CLI_BIN"));
+    }
+
+    @Test
+    void shouldRejectMissingRedisCliWhenStopOperationActuallyRuns() {
+        properties.getRedis().setCliBin(
+                temporaryDirectory.resolve("redis-cli").toString()
+        );
+
+        IOException exception = assertThrows(
+                IOException.class,
+                () -> executor.executeScript(
+                        ScriptType.STOP_REDIS,
+                        1
+                )
+        );
+
+        assertTrue(exception.getMessage().contains(
+                "agent.redis.cli-bin不存在、不是普通文件或不可执行"
+        ));
     }
 }

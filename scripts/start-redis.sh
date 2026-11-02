@@ -72,12 +72,8 @@ if [[ $# -ne 1 ]]; then
     echo "Redis启动脚本需要一个current软链接路径参数" >&2
     exit 1
 fi
-: "${REDIS_CONFIG_FILE:?请配置REDIS_CONFIG_FILE}"
+# 固定配置路径已经由启动校验确认，这里只检查运行时文件状态。
 config_file="${REDIS_CONFIG_FILE}"
-if [[ "$config_file" != /* ]]; then
-    echo "Redis配置文件必须使用绝对路径" >&2
-    exit 1
-fi
 if [[ ! -f "$config_file" || ! -r "$config_file" ]]; then
     echo "Redis配置文件不存在或不可读" >&2
     exit 1
@@ -96,10 +92,6 @@ validate_pid_directory "$redis_pidfile"
 
 # 校验current软链接，解析本次启动使用的版本目录。
 current_dir="$1"
-if [[ "$current_dir" != /* ]]; then
-    echo "current软链接必须使用绝对路径：$current_dir" >&2
-    exit 1
-fi
 if [[ ! -L "$current_dir" ]]; then
     echo "current软链接不存在或不是软链接：$current_dir" >&2
     exit 1

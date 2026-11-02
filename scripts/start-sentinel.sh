@@ -67,12 +67,8 @@ if [[ $# -ne 1 ]]; then
     echo "Sentinel启动脚本需要一个current软链接路径参数" >&2
     exit 1
 fi
-: "${SENTINEL_CONFIG_FILE:?请配置SENTINEL_CONFIG_FILE}"
+# 固定配置路径已经由启动校验确认，这里只检查运行时文件状态。
 config_file="${SENTINEL_CONFIG_FILE}"
-if [[ "$config_file" != /* ]]; then
-    echo "Sentinel配置文件必须使用绝对路径" >&2
-    exit 1
-fi
 if [[ ! -f "$config_file" || ! -r "$config_file" ]]; then
     echo "Sentinel配置文件不存在或不可读" >&2
     exit 1
@@ -80,12 +76,6 @@ fi
 # Sentinel运行时会重写配置，配置文件必须可写。
 if [[ ! -w "$config_file" ]]; then
     echo "Sentinel配置文件不可写" >&2
-    exit 1
-fi
-# Sentinel重写配置时需要在同目录创建临时文件并执行替换。
-config_directory="$(dirname -- "$config_file")"
-if [[ ! -d "$config_directory" || ! -w "$config_directory" || ! -x "$config_directory" ]]; then
-    echo "Sentinel配置文件父目录不存在或不可写：$config_directory" >&2
     exit 1
 fi
 
@@ -102,10 +92,6 @@ validate_pid_directory "$sentinel_pidfile"
 
 # 校验current软链接，解析本次启动使用的版本目录。
 current_dir="$1"
-if [[ "$current_dir" != /* ]]; then
-    echo "current软链接必须使用绝对路径：$current_dir" >&2
-    exit 1
-fi
 if [[ ! -L "$current_dir" ]]; then
     echo "current软链接不存在或不是软链接：$current_dir" >&2
     exit 1

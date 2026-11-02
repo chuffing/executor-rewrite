@@ -32,7 +32,6 @@ public class StopSentinelServiceImpl implements StopSentinelService {
     public OperationResultDTO stopSentinel() {
 
         long startTime = System.currentTimeMillis();
-
         // 1. Sentinel端口已经关闭时，目标状态已经满足，直接返回成功。
         try {
             if (isSentinelStopped()) {
@@ -52,9 +51,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
             );
         }
 
-        // 脚本执行结果。
         CommandResultDTO commandResult;
-
         // 2. Sentinel仍在运行，执行停止脚本。
         try {
             commandResult = fixedScriptExecutor.executeScript(
@@ -81,7 +78,7 @@ public class StopSentinelServiceImpl implements StopSentinelService {
         } catch (IOException e) {
             return OperationResultDTO.failure(
                     BusinessCode.OPERATION_ERROR,
-                    "Sentinel停止脚本无法执行",
+                    "Sentinel停止操作失败：" + e.getMessage(),
                     startTime,
                     System.currentTimeMillis()
             );
@@ -90,8 +87,8 @@ public class StopSentinelServiceImpl implements StopSentinelService {
         // 3. 脚本执行结束后，统一等待Sentinel达到停止状态。
         // 即使脚本超时或退出码异常，只要最终已经停止，也认为操作成功。
         OperationResultDTO stopResult;
-
         try {
+            // 等待Sentinel停止，检查PING和端口状态。
             stopResult = waitForStopped(startTime);
 
         } catch (InterruptedException e) {
@@ -163,17 +160,11 @@ public class StopSentinelServiceImpl implements StopSentinelService {
         long timeoutMillis = TimeUnit.SECONDS.toMillis(
                 agentProperties.getOperation().getStopCheckTimeoutSeconds()
         );
-
-        long intervalMillis = agentProperties.getOperation()
-                .getStopCheckIntervalMillis();
-
+        long intervalMillis = agentProperties.getOperation().getStopCheckIntervalMillis();
         long beginTime = System.currentTimeMillis();
-
         boolean pingSuccess = true;
         boolean portOpen = true;
-
-        AgentProperties.SentinelConfig sentinelConfig =
-                agentProperties.getSentinel();
+        AgentProperties.SentinelConfig sentinelConfig = agentProperties.getSentinel();
 
         while (System.currentTimeMillis() - beginTime < timeoutMillis) {
 

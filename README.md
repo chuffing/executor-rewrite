@@ -43,7 +43,6 @@
 │   ├── agent-token.dat             # 首次注册成功后自动生成
 │   └── task-results/               # 未成功上报的任务结果
 ├── scripts/
-│   ├── precheck-host.sh
 │   ├── deploy-version.sh
 │   ├── switch-version.sh
 │   ├── stop-redis.sh
@@ -98,7 +97,7 @@ mkdir -p /opt/redis/data
 /opt/redis/agent/redis-monitor-agent.jar
 ```
 
-将项目 `scripts` 目录中的七个生产脚本原样复制到：
+将项目 `scripts` 目录中的六个生产脚本原样复制到：
 
 ```text
 /opt/redis/scripts/
@@ -249,7 +248,7 @@ Redis和Sentinel密码、端口、正式配置文件、受控数据/日志根目
 
 每台生产服务器需要人工完成：
 
-1. 复制同一个执行器 JAR 和七个固定脚本。
+1. 复制同一个执行器 JAR 和六个固定脚本。
 2. 创建本机所需目录并设置执行器账户权限。
 3. 准备本机独立的外置 `application.yml`。
 4. 填写本机真实的 Redis、Sentinel 地址、端口、密码和服务名称。
@@ -281,7 +280,7 @@ Redis和Sentinel密码、端口、正式配置文件、受控数据/日志根目
 
 每台新服务器需要人工完成：
 
-1. 复制同一个执行器 JAR 和七个固定脚本。
+1. 复制同一个执行器 JAR 和六个固定脚本。
 2. 创建本机所需目录并设置执行器账户权限。
 3. 准备本机独立的外置 `application.yml`。
 4. 提前填写未来 Redis 和 Sentinel 将使用的端口、密码、配置路径及服务名称。
@@ -368,7 +367,7 @@ Redis和Sentinel密码、端口、正式配置文件、受控数据/日志根目
 - [ ] Token 文件路径可写，且没有复制其他服务器的 Token。
 - [ ] Redis、Sentinel 地址、端口、密码和服务名称正确。
 - [ ] Redis、Sentinel 正式配置路径正确。
-- [ ] 七个固定脚本已经复制完成并且可读。
+- [ ] 六个固定脚本已经复制完成并且可读。
 - [ ] 包暂存目录、配置暂存目录、版本目录、数据目录已经创建。
 - [ ] 正式配置目录和备份目录已经创建且不是同一目录，权限正确。
 - [ ] `application.yml` 已填写Redis/Sentinel完整配置且权限为 `600`。

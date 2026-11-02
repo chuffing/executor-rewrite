@@ -30,12 +30,9 @@ public class StartSentinelServiceImpl implements StartSentinelService {
     @Override
     public OperationResultDTO startSentinel() {
 
-        // 获取开始时间。
         long startTime = System.currentTimeMillis();
-
         // 1. 检查Sentinel监控服务名称。
         String serviceName = agentProperties.getSentinel().getServiceName();
-
         if (serviceName == null || serviceName.trim().isEmpty()) {
             return OperationResultDTO.failure(
                     BusinessCode.OPERATION_ERROR,
@@ -44,12 +41,8 @@ public class StartSentinelServiceImpl implements StartSentinelService {
                     System.currentTimeMillis()
             );
         }
-
-        AgentProperties.SentinelConfig sentinelConfig =
-                agentProperties.getSentinel();
-
+        AgentProperties.SentinelConfig sentinelConfig = agentProperties.getSentinel();
         serviceName = serviceName.trim();
-
         // 2. Sentinel已经正常运行并发现主节点时，直接返回成功。
         if (isSentinelStarted(sentinelConfig, serviceName)) {
             return OperationResultDTO.success(
@@ -59,9 +52,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
             );
         }
 
-        // 脚本执行结果。
         CommandResultDTO commandResult;
-
         // 3. Sentinel尚未正常运行，执行启动脚本。
         try {
             commandResult = fixedScriptExecutor.executeScript(
@@ -98,8 +89,8 @@ public class StartSentinelServiceImpl implements StartSentinelService {
         // 4. 脚本执行结束后，统一等待Sentinel达到正常运行状态。
         // 即使脚本超时或退出码异常，只要Sentinel最终正常运行，也认为操作成功。
         OperationResultDTO startResult;
-
         try {
+            // 等待Sentinel启动并发现被监控的Redis主节点。
             startResult = waitForStarted(startTime, serviceName);
 
         } catch (InterruptedException e) {
@@ -149,17 +140,11 @@ public class StartSentinelServiceImpl implements StartSentinelService {
         long timeoutMillis = TimeUnit.SECONDS.toMillis(
                 agentProperties.getOperation().getStartCheckTimeoutSeconds()
         );
-
-        long intervalMillis = agentProperties.getOperation()
-                .getStartCheckIntervalMillis();
-
-        AgentProperties.SentinelConfig sentinelConfig =
-                agentProperties.getSentinel();
-
+        long intervalMillis = agentProperties.getOperation().getStartCheckIntervalMillis();
+        AgentProperties.SentinelConfig sentinelConfig = agentProperties.getSentinel();
         long beginTime = System.currentTimeMillis();
 
         while (System.currentTimeMillis() - beginTime < timeoutMillis) {
-
             // 1. 检查Sentinel是否正常运行并发现被监控的Redis主节点。
             if (isSentinelStarted(sentinelConfig, serviceName)) {
                 return OperationResultDTO.success(

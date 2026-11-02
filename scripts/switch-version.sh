@@ -33,15 +33,12 @@ cleanup() {
     exit "$result"
 }
 
-[[ "$version" =~ ^[0-9]+(\.[0-9]+){1,3}(-[0-9A-Za-z.-]+)?$ ]] || fail "目标版本号格式不正确"
-[[ "$install_dir" == /* && "$current" == /* ]] || fail "安装目录和current路径必须使用绝对路径"
-[[ -d "$install_dir" ]] || fail "版本安装目录不存在"
+# 版本号、安装目录和current路径已经由Java入口及启动校验确认。
+# 这里解析真实安装目录，仅用于后续目标版本和软链接边界判断。
 install_dir="$(readlink -f -- "$install_dir")"
 name="${current##*/}"
-[[ -n "$name" && "$name" != . && "$name" != .. ]] || fail "current软链接路径不合法"
 parent="${current%/*}"
 [[ -n "$parent" ]] || parent=/
-[[ -d "$parent" && -w "$parent" && -x "$parent" ]] || fail "current父目录不存在或不可写"
 parent="$(readlink -f -- "$parent")"
 current="$parent/$name"
 lock="$parent/.$name.switch-lock"

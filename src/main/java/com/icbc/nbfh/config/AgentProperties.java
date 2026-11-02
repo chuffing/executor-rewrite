@@ -121,10 +121,11 @@ public class AgentProperties {
         @NotBlank(message = "Redis日志根目录不能为空")
         private String logDir = "/opt/redis/logs";
 
-        /** 停止Redis和Sentinel时使用的redis-cli命令或绝对路径。 */
+        /** 停止Redis和Sentinel时使用的redis-cli绝对路径。 */
         @NotBlank(message = "redis-cli路径不能为空")
-        private String cliBin = "redis-cli";
+        private String cliBin = "/opt/redis/current/bin/redis-cli";
 
+        @NotBlank(message = "Redis备份配置文件路径不能为空")
         private String backupFile;
 
         /** Redis 连接池。 */
@@ -178,6 +179,7 @@ public class AgentProperties {
         @NotBlank(message = "Sentinel日志根目录不能为空")
         private String logDir = "/opt/redis/logs";
 
+        @NotBlank(message = "Sentinel备份配置文件路径不能为空")
         private String backupFile;
     }
 
@@ -186,24 +188,31 @@ public class AgentProperties {
     public static class OperationConfig {
 
         /** 固定 Shell 脚本目录。 */
+        @NotBlank(message = "Shell脚本目录不能为空")
         private String scriptDir;
 
         /** Redis源码包暂存目录。 */
+        @NotBlank(message = "Redis源码包目录不能为空")
         private String packageDir = "/opt/redis/packages/";
 
         /** Redis与Sentinel配置文件的暂存根目录。 */
+        @NotBlank(message = "配置文件暂存目录不能为空")
         private String configFileDir;
 
         /** Redis各版本正式安装目录。 */
+        @NotBlank(message = "Redis版本安装目录不能为空")
         private String installDir = "/opt/redis/versions/";
 
         /** 当前Redis版本软链接路径，预留给版本切换。 */
+        @NotBlank(message = "Redis当前版本软链接路径不能为空")
         private String currentDir = "/opt/redis/current";
 
         /** 预检查要求的最低磁盘可用空间，默认2 GiB。 */
+        @Min(value = 1, message = "最低磁盘可用空间必须大于0")
         private long minFreeSpaceBytes = 2L * 1024L * 1024L * 1024L;
 
         /** Shell 执行超时，秒。 */
+        @Min(value = 1, message = "Shell脚本执行超时不能小于1秒")
         private long scriptTimeoutSeconds = 10;
 
         /** Redis源码编译及版本部署超时，秒。 */
@@ -211,15 +220,19 @@ public class AgentProperties {
         private long versionDeployTimeoutSeconds = 1800;
 
         /** Redis 停止检查超时，秒。 */
+        @Min(value = 1, message = "Redis停止检查超时不能小于1秒")
         private long stopCheckTimeoutSeconds = 10;
 
         /** Redis 停止检查间隔，毫秒。 */
+        @Min(value = 1, message = "Redis停止检查间隔不能小于1毫秒")
         private long stopCheckIntervalMillis = 1000;
 
         /** Redis 启动检查超时，秒。 */
+        @Min(value = 1, message = "Redis启动检查超时不能小于1秒")
         private long startCheckTimeoutSeconds = 30;
 
         /** Redis 启动检查间隔，毫秒。 */
+        @Min(value = 1, message = "Redis启动检查间隔不能小于1毫秒")
         private long startCheckIntervalMillis = 1000;
 
         /** Redis和Sentinel拓扑验收超时，秒。 */

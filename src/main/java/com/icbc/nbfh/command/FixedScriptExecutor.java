@@ -9,11 +9,13 @@ import org.springframework.stereotype.Component;
 import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -54,32 +56,39 @@ public class FixedScriptExecutor {
                                           String... arguments)
             throws IOException, InterruptedException {
 
-        // 1. 校验参数和脚本路径，返回合法的脚本文件。
-        File scriptFile = resolveAndValidateScript(scriptType, timeoutSeconds);
+        // 1. 根据脚本目录和脚本类型获取脚本文件
+        File scriptFile = new File(
+                agentProperties.getOperation().getScriptDir(),
+                scriptType.getFileName()
+        );
+
+        // 停止操作真正使用redis-cli前，检查首次部署后才会出现的动态文件状态。
+        if (scriptType == ScriptType.STOP_REDIS
+                || scriptType == ScriptType.STOP_SENTINEL) {
+            Path redisCli = Paths.get(agentProperties.getRedis().getCliBin());
+            if (!Files.isRegularFile(redisCli)
+                    || !Files.isExecutable(redisCli)) {
+                throw new IOException(
+                        "agent.redis.cli-bin不存在、不是普通文件或不可执行："
+                                + redisCli
+                );
+            }
+        }
+
         // 2. 创建Shell命令，参数由ProcessBuilder独立传递。
         List<String> command = new ArrayList<>();
         // 使用Bash解释器执行脚本。
         command.add("/bin/bash");
         command.add(scriptFile.getAbsolutePath());
-
-        if (arguments != null) {
-            for (String argument : arguments) {
-                if (argument == null) {
-                    throw new IllegalArgumentException("Shell参数不能为空");
-                }
-
-                command.add(argument);
-            }
+        // 将脚本参数添加到执行命令中
+        for (String argument : arguments) {
+            command.add(argument);
         }
-
         // 创建ProcessBuilder对象用于配置和启动操作系统进程。
         ProcessBuilder processBuilder = new ProcessBuilder(command);
-
         // 设置脚本工作目录
         processBuilder.directory(scriptFile.getParentFile());
-
-        // application.yml是脚本配置的唯一来源。仅向本次子进程注入对应
-        // Redis或Sentinel配置，不要求服务器预先配置系统环境变量。
+        // application.yml是脚本配置的唯一来源。仅向本次子进程注入对应Redis或Sentinel配置，不要求服务器预先配置系统环境变量。
         configureScriptEnvironment(processBuilder, scriptType);
 
         // 3. 启动进程
@@ -96,13 +105,11 @@ public class FixedScriptExecutor {
         );
 
         try {
-            // 不向Shell脚本提供标准输入
+            // 关闭Bash标准输入通道。
             process.getOutputStream().close();
-
             Future<String> stdoutFuture = outputExecutor.submit(
                     () -> readStream(process.getInputStream())
             );
-
             Future<String> stderrFuture = outputExecutor.submit(
                     () -> readStream(process.getErrorStream())
             );
@@ -115,9 +122,7 @@ public class FixedScriptExecutor {
 
             // 6. 执行超时
             if (!finished) {
-
                 terminateProcess(process);
-
                 return new CommandResultDTO(
                         -1,
                         getOutputOrEmpty(stdoutFuture),
@@ -128,7 +133,6 @@ public class FixedScriptExecutor {
 
             // 7. 正常结束，获取退出码及输出
             int exitCode = process.exitValue();
-
             String stdout = getOutput(stdoutFuture);
             String stderr = getOutput(stderrFuture);
 
@@ -141,13 +145,11 @@ public class FixedScriptExecutor {
             );
 
         } catch (InterruptedException e) {
-
             // 保留线程中断状态
             Thread.currentThread().interrupt();
             throw e;
 
         } finally {
-
             // 9. 确保进程不会继续运行
             terminateProcess(process);
 
@@ -228,58 +230,6 @@ public class FixedScriptExecutor {
                 "REDIS_CLI_BIN",
                 agentProperties.getRedis().getCliBin()
         );
-    }
-
-
-    /**
-     * 校验参数和脚本路径，返回合法的脚本文件。
-     */
-    private File resolveAndValidateScript(
-            ScriptType scriptType,
-            long timeoutSeconds
-    ) throws IOException {
-
-        // 校验脚本类型
-        if (scriptType == null) {
-            throw new IllegalArgumentException("脚本类型不能为空");
-        }
-        // 校验超时时间
-        if (timeoutSeconds <= 0) {
-            throw new IllegalArgumentException("脚本执行超时时间必须大于0");
-        }
-        // 检查脚本目录是否配置
-        String scriptDir = agentProperties.getOperation().getScriptDir();
-        if (scriptDir == null || scriptDir.trim().isEmpty()) {
-            throw new IllegalArgumentException("Shell脚本目录未配置");
-        }
-        // 获取脚本目录
-        File directory = new File(scriptDir.trim()).getCanonicalFile();
-        // 检查脚本目录是否存在
-        if (!directory.isDirectory()) {
-            throw new FileNotFoundException("脚本目录不存在");
-        }
-        // 获取脚本文件
-        File scriptFile = new File(
-                directory,
-                scriptType.getFileName()
-        ).getCanonicalFile();
-        // 检查脚本是否位于指定目录
-        if (!directory.equals(scriptFile.getParentFile())) {
-            throw new IllegalArgumentException("脚本路径不合法");
-        }
-        // 检查脚本文件是否存在
-        if (!scriptFile.isFile()) {
-            throw new FileNotFoundException(
-                    "脚本文件不存在：" + scriptType.getFileName()
-            );
-        }
-        // 检查脚本是否可读
-        if (!scriptFile.canRead()) {
-            throw new IOException(
-                    "脚本文件不可读：" + scriptType.getFileName()
-            );
-        }
-        return scriptFile;
     }
 
 

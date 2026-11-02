@@ -17,14 +17,8 @@ if (( 10#$port < 1 || 10#$port > 65535 )); then
     echo "Redis端口必须在1到65535之间" >&2
     exit 1
 fi
-cli_bin="$(command -v -- "${REDIS_CLI_BIN:-redis-cli}")" || {
-    echo "未找到redis-cli程序" >&2
-    exit 1
-}
-if [[ ! -f "$cli_bin" || ! -x "$cli_bin" ]]; then
-    echo "redis-cli不是可执行文件" >&2
-    exit 1
-fi
+# redis-cli路径由固定配置注入；Java在每次停止操作前动态检查文件和执行权限。
+cli_bin="$REDIS_CLI_BIN"
 
 # 用环境变量传递密码，避免密码出现在进程命令行中。
 export REDISCLI_AUTH="${REDIS_PASSWORD}"

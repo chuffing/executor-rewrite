@@ -7,8 +7,6 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum ScriptType {
 
-    PRECHECK_HOST("precheck-host.sh"),
-
     STOP_REDIS("stop-redis.sh"),
     START_REDIS("start-redis.sh"),
     STOP_SENTINEL("stop-sentinel.sh"),

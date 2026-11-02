@@ -1,5 +1,5 @@
 server:
-  port: ${SERVER_PORT:9101}
+  port: 9101
   address: 0.0.0.0
 
 spring:
@@ -22,75 +22,74 @@ agent:
   # 平台通信：地址、注册码、token 持久化文件
   platform:
     # 平台端地址，必须从生产服务器可访问，例如 http://10.0.0.10:8100
-    url: ${AGENT_PLATFORM_URL:${PLATFORM_URL:http://172.20.10.2:8100}}
+    url: http://172.20.10.2:8100
     # 平台预设注册码，需与平台端 platform.register-code 一致
-    register-code: ${AGENT_REGISTER_CODE:${REGISTER_CODE:Danuvius}}
+    register-code: Danuvius
     # 本地注册凭证文件，注册成功后保存，重启不重复注册
-    token-file: ${AGENT_TOKEN_FILE:${TOKEN_FILE:./agent-token.dat}}
+    token-file: ./agent-token.dat
 
   # 建议每台服务器使用清晰且唯一的名称（仅用于日志/排查）
-  agent-name: ${AGENT_NAME:redis-monitor-agent}
+  agent-name: redis-monitor-agent
 
   # 执行器对平台可见的 IPv4，留空自动识别（优先默认路由网卡）
-  host-ip: ${AGENT_HOST_IP:}
+  host-ip:
 
   # 未注册或已注册未绑定时的二次注册重试间隔（毫秒）
-  register-retry-interval: ${AGENT_REGISTER_RETRY_INTERVAL:30000}
+  register-retry-interval: 30000
 
   # 采集数据本地留存目录（上报失败时缓存，支持断点续传）
-  data-dir: ${AGENT_DATA_DIR:./data}
+  data-dir: ./data
   # 本地留存数据保留天数
-  data-retain-days: ${AGENT_DATA_RETAIN_DAYS:7}
+  data-retain-days: 7
 
   # 运行日志目录
-  log-dir: ${AGENT_LOG_DIR:./logs}
+  log-dir: ./logs
   # 升级包下载临时目录
-  upgrade-dir: ${AGENT_UPGRADE_DIR:/tmp/redis-upgrade/}
+  upgrade-dir: /tmp/redis-upgrade/
 
   # 定时任务
   schedule:
     # 指标采集上报间隔：5 分钟
-    collect-interval: ${AGENT_COLLECT_INTERVAL:300000}
+    collect-interval: 300000
     # 心跳间隔：30 秒
-    heartbeat-interval: ${AGENT_HEARTBEAT_INTERVAL:30000}
+    heartbeat-interval: 30000
     # 注册/二次注册重试间隔：30 秒
-    register-interval: ${AGENT_REGISTER_INTERVAL:30000}
+    register-interval: 30000
 
   # 首次注册延迟（毫秒）
-  register-initial-delay: ${AGENT_REGISTER_INITIAL_DELAY:5000}
+  register-initial-delay: 5000
 
   # 运维任务结果本地保存
   task-result:
     # 相对路径基于Java工作目录，生产环境建议配置独立绝对路径。
-    directory: ${AGENT_TASK_RESULT_DIR:./task-results}
+    directory: ./task-results
 
   # 调用平台接口超时（毫秒）
-  http-connect-timeout: ${HTTP_CONNECT_TIMEOUT:5000}
-  http-read-timeout: ${HTTP_READ_TIMEOUT:10000}
+  http-connect-timeout: 5000
+  http-read-timeout: 10000
 
   # Redis
   redis:
-#    host: ${REDIS_HOST:127.0.0.1}
-    host: ${REDIS_HOST:127.0.0.1}
-    port: ${REDIS_PORT:6379}
-    password: ${REDIS_PASSWORD:RedisTest123!}
-    db: ${REDIS_DB:0}
+    host: 127.0.0.1
+    port: 6379
+    password: RedisTest123!
+    db: 0
     # Redis连接超时，单位毫秒。
-    timeout: ${REDIS_TIMEOUT:2000}
+    timeout: 2000
 
-    service-name: ${REDIS_SERVICE_NAME:}
-    # Redis正式配置文件，生产环境可通过环境变量覆盖。
-    # Java执行脚本时会把这里的最终值注入子进程，无需服务器手工配置环境变量。
-    config-file: ${REDIS_CONFIG_FILE:/opt/redis/conf/redis.conf}
+    service-name:
+    # Redis正式配置文件；Java执行脚本时会把这里的值注入子进程。
+    config-file: /opt/redis/conf/redis.conf
     # 预检查使用的数据目录，同时作为启动脚本允许创建运行子目录的受控根目录。
     # Redis实际数据位置仍由redis.conf中的dir等参数决定，两者须保持一致。
-    data-dir: ${REDIS_DATA_DIR:/opt/redis/data}
+    data-dir: /opt/redis/data
     # redis.conf中的logfile父目录必须位于该受控根目录下。
     log-dir: /opt/redis/logs
-    # 停止Redis和Sentinel时使用；在PATH中可直接写redis-cli，否则填写绝对路径。
-    cli-bin: redis-cli
+    # 停止Redis和Sentinel时使用；必须填写稳定的绝对路径，不依赖服务器PATH。
+    # 首次纳管已有Redis时，current应指向当前实际安装目录；新服务器首次部署前允许该文件不存在。
+    cli-bin: /opt/redis/current/bin/redis-cli
     # Redis可信备份配置；DEPLOY_CONFIG成功时同步更新。
-    backup-file: ${REDIS_BACKUP_FILE:/opt/redis/backup/redis.conf}
+    backup-file: /opt/redis/backup/redis.conf
 
     pool:
       max-total: 5
@@ -101,60 +100,58 @@ agent:
   # Sentinel
   sentinel:
     # 是否采集 Sentinel 节点，随指标一次上报
-    enabled: ${SENTINEL_ENABLED:true}
-#    host: ${SENTINEL_HOST:127.0.0.1}
-    host: ${SENTINEL_HOST:127.0.0.1}
-    port: ${SENTINEL_PORT:26379}
-    password: ${SENTINEL_PASSWORD:RedisTest123!}
+    enabled: true
+    host: 127.0.0.1
+    port: 26379
+    password: RedisTest123!
 
     # Sentinel监控的主从组名称，同时作为 SENTINEL sentinels 的 masterName
-    service-name: ${SENTINEL_SERVICE_NAME:${SENTINEL_MASTER_NAME:mymaster}}
+    service-name: mymaster
     # 多个地址用逗号分隔，例如 10.0.0.11:26379,10.0.0.12:26379,10.0.0.13:26379
     # 为空时只使用上面的 host:port；任一可达即可发现全部哨兵
-    nodes: ${SENTINEL_NODES:}
+    nodes:
 
     # Sentinel连接超时，单位毫秒。
-    timeout: ${SENTINEL_TIMEOUT:2000}
-    # Sentinel正式配置文件，生产环境可通过环境变量覆盖。
-    # Java执行脚本时会把这里的最终值注入子进程，无需服务器手工配置环境变量。
+    timeout: 2000
+    # Sentinel正式配置文件；Java执行脚本时会把这里的值注入子进程。
     # 配置文件须允许Sentinel正常重写。
-    config-file: ${SENTINEL_CONFIG_FILE:/opt/redis/conf/sentinel.conf}
+    config-file: /opt/redis/conf/sentinel.conf
     # sentinel.conf中的dir和logfile必须位于下面两个受控根目录下。
     data-dir: /opt/redis/data
     log-dir: /opt/redis/logs
     # Sentinel可信备份配置；DEPLOY_CONFIG成功时同步更新。
-    backup-file: ${SENTINEL_BACKUP_FILE:/opt/redis/backup/sentinel.conf}
+    backup-file: /opt/redis/backup/sentinel.conf
 
-  # 运维操作：目录示例仅用于开发，生产路径以银行服务器实际环境为准。
+  # 运维操作：目录示例仅用于开发，生产路径以服务器实际环境为准。
   # 不会在执行器启动或主机预检查时自动创建这些根目录。
   operation:
-    # 固定Shell脚本目录，须事先准备7个已实现脚本。
-    script-dir: ${AGENT_SCRIPT_DIR:/opt/redis/scripts}
+    # 固定Shell脚本目录，须事先准备六个已实现脚本。
+    script-dir: /opt/redis/scripts
     # Redis源码包暂存根目录，须事先存在；Java只自动创建其下staging及任务目录。
-    package-dir: ${AGENT_PACKAGE_DIR:/opt/redis/packages/}
+    package-dir: /opt/redis/packages/
     # Redis与Sentinel配置文件的暂存根目录，须事先存在。
-    config-file-dir: ${AGENT_CONFIG_FILE_DIR:/opt/redis/configfiles}
+    config-file-dir: /opt/redis/configfiles
     # 各版本正式安装根目录，须事先存在；源码编译部署脚本创建{targetVersion}/bin。
-    install-dir: ${AGENT_INSTALL_DIR:/opt/redis/versions/}
+    install-dir: /opt/redis/versions/
     # 当前版本软链接路径，不是真实目录；SWITCH_VERSION负责首次创建或切换。
-    current-dir: ${AGENT_CURRENT_DIR:/opt/redis/current}
+    current-dir: /opt/redis/current
 
     # 版本部署开始前，版本安装目录所在文件系统要求的最低可用空间，默认2 GiB。
     # 该值是部署前安全门槛，不代表对后续磁盘空间的绝对保证。
-    min-free-space-bytes: ${AGENT_MIN_FREE_SPACE_BYTES:2147483648}
+    min-free-space-bytes: 2147483648
 
     # Shell脚本总超时，单位秒；可由外部配置覆盖，当前默认10秒。
     script-timeout-seconds: 10
     # Redis源码编译及版本部署超时，单位秒，默认30分钟。
-    version-deploy-timeout-seconds: ${AGENT_VERSION_DEPLOY_TIMEOUT_SECONDS:1800}
+    version-deploy-timeout-seconds: 1800
     # Java启停健康检查：timeout单位秒，interval单位毫秒。
     stop-check-timeout-seconds: 10
     stop-check-interval-millis: 1000
     start-check-timeout-seconds: 30
     start-check-interval-millis: 1000
     # 运维操作完成后的拓扑验收：最多等待60秒，每5秒采集一次。
-    topology-check-timeout-seconds: ${AGENT_TOPOLOGY_CHECK_TIMEOUT_SECONDS:60}
-    topology-check-interval-millis: ${AGENT_TOPOLOGY_CHECK_INTERVAL_MILLIS:5000}
+    topology-check-timeout-seconds: 60
+    topology-check-interval-millis: 5000
 
 logging:
   level:

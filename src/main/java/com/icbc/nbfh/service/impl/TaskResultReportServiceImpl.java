@@ -59,7 +59,6 @@ public class TaskResultReportServiceImpl
             saveResult(resultFile, report);
 
         } catch (IOException e) {
-
             log.error(
                     "任务结果本地保存失败，taskNo={}，stepNo={}",
                     report.getTaskNo(),
@@ -159,7 +158,6 @@ public class TaskResultReportServiceImpl
 
         // 4. 用临时文件替换正式文件。
         try {
-
             Files.move(
                     tempFile,
                     resultFile,
@@ -168,7 +166,6 @@ public class TaskResultReportServiceImpl
             );
 
         } catch (AtomicMoveNotSupportedException e) {
-
             // 文件系统不支持原子移动时，使用普通替换。
             Files.move(
                     tempFile,

@@ -39,15 +39,17 @@ cleanup() {
     exit "$result"
 }
 
-[[ "$version" =~ ^[0-9]+(\.[0-9]+){1,3}(-[0-9A-Za-z.-]+)?$ ]] || fail "目标版本号格式不正确"
-[[ "$package" == /* && "$install_dir" == /* ]] || fail "源码包和安装目录必须使用绝对路径"
+# 版本号、源码包绝对路径和固定安装目录已由Java校验。
 [[ -f "$package" && -r "$package" ]] || fail "源码包不是可读的普通文件"
-[[ -d "$install_dir" && -w "$install_dir" && -x "$install_dir" ]] || fail "正式安装目录不存在或不可写"
-for command_name in tar make cc timeout od readlink stat mktemp; do
-    command -v "$command_name" >/dev/null 2>&1 || fail "缺少Redis源码编译依赖：$command_name"
+commands=(
+    tar gzip make cc timeout od readlink stat mktemp
+    id head sort uniq grep cp chmod ln mv mkdir rm rmdir
+)
+for command_name in "${commands[@]}"; do
+    command -v -- "$command_name" >/dev/null 2>&1 \
+        || fail "缺少Redis源码编译依赖：$command_name"
 done
 install_dir="$(readlink -f -- "$install_dir")"
-[[ "$install_dir" != / ]] || fail "不能使用根目录作为版本安装目录"
 
 # 只处理执行器创建的固定暂存文件，保持原来的受控路径及权限约束。
 request="${package%/*}"
@@ -121,7 +123,7 @@ while IFS= read -r entry; do
     entry_count=$((entry_count + 1))
     (( entry_count <= 50000 )) || fail "Redis源码包条目数超过50000"
 done < "$archive_list"
-if LC_ALL=C sort "$archive_list" | uniq -d | grep -q .; then
+if sort "$archive_list" | uniq -d | grep -q .; then
     fail "Redis源码包包含重复路径"
 fi
 

@@ -33,7 +33,6 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
     public OperationResultDTO restoreConfig(Map<String, String> params) {
 
         long startTime = System.currentTimeMillis();
-
         // 获取并校验平台下发的配置文件SHA256。
         String redisConfigSha256 = getConfigSha256(
                 params,
@@ -43,9 +42,7 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
                 params,
                 TaskParamConstants.SENTINEL_CONFIG_SHA256
         );
-
-        if (redisConfigSha256 == null
-                || sentinelConfigSha256 == null) {
+        if (redisConfigSha256 == null || sentinelConfigSha256 == null) {
             return OperationResultDTO.failure(
                     BusinessCode.OPERATION_ERROR,
                     "平台下发的Redis或Sentinel配置SHA256不正确",
@@ -59,24 +56,10 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
         String redisConfigFile = agentProperties.getRedis().getConfigFile();
         String sentinelBackupFile = agentProperties.getSentinel().getBackupFile();
         String sentinelConfigFile = agentProperties.getSentinel().getConfigFile();
-
-        // 检查执行器本地配置是否完整。
-        if (!StringUtils.hasText(redisBackupFile)
-                || !StringUtils.hasText(redisConfigFile)
-                || !StringUtils.hasText(sentinelBackupFile)
-                || !StringUtils.hasText(sentinelConfigFile)) {
-            return OperationResultDTO.failure(
-                    BusinessCode.OPERATION_ERROR,
-                    "Redis或Sentinel配置文件路径未配置完整",
-                    startTime,
-                    System.currentTimeMillis()
-            );
-        }
-
-        Path redisBackupPath = Paths.get(redisBackupFile.trim());
-        Path redisConfigPath = Paths.get(redisConfigFile.trim());
-        Path sentinelBackupPath = Paths.get(sentinelBackupFile.trim());
-        Path sentinelConfigPath = Paths.get(sentinelConfigFile.trim());
+        Path redisBackupPath = Paths.get(redisBackupFile);
+        Path redisConfigPath = Paths.get(redisConfigFile);
+        Path sentinelBackupPath = Paths.get(sentinelBackupFile);
+        Path sentinelConfigPath = Paths.get(sentinelConfigFile);
 
         // 检查两份备份文件是否存在并且可读。
         if (!FileValidationUtil.isReadableFile(redisBackupPath)
@@ -89,23 +72,10 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
             );
         }
 
-        // 检查目标配置文件所在目录是否可写。
-        if (!FileValidationUtil.isWritableTarget(redisConfigPath)
-                || !FileValidationUtil.isWritableTarget(sentinelConfigPath)) {
-            return OperationResultDTO.failure(
-                    BusinessCode.OPERATION_ERROR,
-                    "Redis或Sentinel目标配置目录不可写",
-                    startTime,
-                    System.currentTimeMillis()
-            );
-        }
-
         try {
             // 校验本地备份与平台保存的SHA256是否一致。
-            if (!redisConfigSha256.equalsIgnoreCase(
-                    FileChecksumUtil.calculateSha256(redisBackupPath))
-                    || !sentinelConfigSha256.equalsIgnoreCase(
-                    FileChecksumUtil.calculateSha256(sentinelBackupPath))) {
+            if (!redisConfigSha256.equalsIgnoreCase(FileChecksumUtil.calculateSha256(redisBackupPath))
+                    || !sentinelConfigSha256.equalsIgnoreCase(FileChecksumUtil.calculateSha256(sentinelBackupPath))) {
                 return OperationResultDTO.failure(
                         BusinessCode.OPERATION_ERROR,
                         "Redis或Sentinel备份配置文件SHA256不一致",

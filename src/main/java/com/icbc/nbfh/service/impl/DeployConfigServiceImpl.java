@@ -11,7 +11,6 @@ import com.icbc.nbfh.util.FileChecksumUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -58,98 +57,52 @@ public class DeployConfigServiceImpl implements DeployConfigService {
         boolean formalConfigDeployed = false;
 
         try {
-
-            // ======== 1. 获取配置文件路径 ========
-            // 暂存路径由执行器在saveAndValidate()成功后生成。
-            Path redisStaged = Paths.get(
-                    params.get(TaskParamConstants.REDIS_CONFIG_LOCAL_PATH));
-
-            Path sentinelStaged = Paths.get(
-                    params.get(TaskParamConstants.SENTINEL_CONFIG_LOCAL_PATH));
-
-            // 两份文件位于同一个任务暂存目录。
-            // 直接获取父目录，供任务结束后清理使用。
+            // ======== 1. 获取redis、sentinel配置文件暂存路径 ========
+            Path redisStaged = Paths.get(params.get(TaskParamConstants.REDIS_CONFIG_LOCAL_PATH));
+            Path sentinelStaged = Paths.get(params.get(TaskParamConstants.SENTINEL_CONFIG_LOCAL_PATH));
+            // 两份文件位于同一个任务暂存目录（staging）。直接获取父目录，供任务结束后清理使用。
             requestDirectory = redisStaged.getParent();
 
-            // 正式配置路径来自本地application.yml。
-            Path redisTarget = resolveConfiguredPath(
-                    agentProperties.getRedis().getConfigFile(),
-                    "Redis正式配置文件");
-
-            Path sentinelTarget = resolveConfiguredPath(
-                    agentProperties.getSentinel().getConfigFile(),
-                    "Sentinel正式配置文件");
-
-            // 备份文件路径来自本地application.yml。
-            Path redisBackup = resolveConfiguredPath(
-                    agentProperties.getRedis().getBackupFile(),
-                    "Redis备份配置文件");
-
-            Path sentinelBackup = resolveConfiguredPath(
-                    agentProperties.getSentinel().getBackupFile(),
-                    "Sentinel备份配置文件");
-
-            if (redisTarget.equals(redisBackup)
-                    || sentinelTarget.equals(sentinelBackup)) {
-                throw new IllegalArgumentException(
-                        "正式配置文件与备份配置文件不能使用同一路径");
-            }
+            // 获取正式配置路径。
+            Path redisTarget = Paths.get(agentProperties.getRedis().getConfigFile());
+            Path sentinelTarget = Paths.get(agentProperties.getSentinel().getConfigFile());
+            // 获取备份配置路径。
+            Path redisBackup = Paths.get(agentProperties.getRedis().getBackupFile());
+            Path sentinelBackup = Paths.get(agentProperties.getSentinel().getBackupFile());
 
             // 获取平台传入的SHA256。
-            String redisSha256 = params.get(
-                    TaskParamConstants.REDIS_CONFIG_SHA256);
+            String redisSha256 = params.get(TaskParamConstants.REDIS_CONFIG_SHA256);
+            String sentinelSha256 = params.get(TaskParamConstants.SENTINEL_CONFIG_SHA256);
 
-            String sentinelSha256 = params.get(
-                    TaskParamConstants.SENTINEL_CONFIG_SHA256);
-
-
-            // ======== 2. 创建正式发布前的临时副本 ========
+            // ======== 2. 创建正式发布前的临时副本并复制暂存的配置文件内容 ========
             // 在Redis正式配置所在目录创建临时文件。
             redisTemporary = createTemporaryConfig(redisTarget);
-
-            // 原样复制Redis配置。
             copyStagedFile(redisStaged, redisTemporary);
-
-            // 在Sentinel正式配置所在目录创建临时文件。
             sentinelTemporary = createTemporaryConfig(sentinelTarget);
-
-            // 原样复制Sentinel配置。
             copyStagedFile(sentinelStaged, sentinelTemporary);
-
-            // 在备份目录中创建临时文件，确保后续能够原子替换。
+            // 在Redis备份配置所在目录创建临时文件。
             redisBackupTemporary = createTemporaryConfig(redisBackup);
             copyStagedFile(redisStaged, redisBackupTemporary);
-
             sentinelBackupTemporary = createTemporaryConfig(sentinelBackup);
             copyStagedFile(sentinelStaged, sentinelBackupTemporary);
 
             // ======== 3. 校验两份临时文件的SHA256 ========
-            if (!redisSha256.equalsIgnoreCase(
-                    FileChecksumUtil.calculateSha256(redisTemporary))) {
-
+            if (!redisSha256.equalsIgnoreCase(FileChecksumUtil.calculateSha256(redisTemporary))) {
                 return OperationResultDTO.failure(
                         BusinessCode.OPERATION_ERROR,
                         "Redis配置文件SHA256不一致",
                         startTime,
                         System.currentTimeMillis());
             }
-
-            if (!sentinelSha256.equalsIgnoreCase(
-                    FileChecksumUtil.calculateSha256(sentinelTemporary))) {
-
+            if (!sentinelSha256.equalsIgnoreCase(FileChecksumUtil.calculateSha256(sentinelTemporary))) {
                 return OperationResultDTO.failure(
                         BusinessCode.OPERATION_ERROR,
                         "Sentinel配置文件SHA256不一致",
                         startTime,
                         System.currentTimeMillis());
             }
-
-            // 备份副本也必须与平台上传摘要一致，避免复制过程产生残缺文件。
-            if (!redisSha256.equalsIgnoreCase(
-                    FileChecksumUtil.calculateSha256(redisBackupTemporary))
-                    || !sentinelSha256.equalsIgnoreCase(
-                    FileChecksumUtil.calculateSha256(sentinelBackupTemporary))) {
-
+            if (!redisSha256.equalsIgnoreCase(FileChecksumUtil.calculateSha256(redisBackupTemporary))
+                    || !sentinelSha256.equalsIgnoreCase(FileChecksumUtil.calculateSha256(sentinelBackupTemporary))) {
                 return OperationResultDTO.failure(
                         BusinessCode.OPERATION_ERROR,
                         "备份配置文件SHA256不一致",
@@ -157,28 +110,21 @@ public class DeployConfigServiceImpl implements DeployConfigService {
                         System.currentTimeMillis());
             }
 
-
-            // ======== 4. 覆盖正式配置文件 ========
-            // 使用原子移动替换Redis正式配置。
-            // 不比较旧配置内容，不备份。
+            // ======== 4. 覆盖正式配置文件，使用原子移动 ========
             Files.move(
                     redisTemporary,
                     redisTarget,
                     StandardCopyOption.ATOMIC_MOVE,
                     StandardCopyOption.REPLACE_EXISTING);
-
-            // 移动成功后，临时文件路径已不存在。
+            // 原子移动成功后，临时文件路径已不存在，置null。
             redisTemporary = null;
-
-            // 使用原子移动替换Sentinel正式配置。
             Files.move(
                     sentinelTemporary,
                     sentinelTarget,
                     StandardCopyOption.ATOMIC_MOVE,
                     StandardCopyOption.REPLACE_EXISTING);
-
             sentinelTemporary = null;
-
+            // 标记正式配置文件已成功部署。
             formalConfigDeployed = true;
 
             // ======== 5. 更新故障恢复备份 ========
@@ -187,17 +133,13 @@ public class DeployConfigServiceImpl implements DeployConfigService {
                     redisBackup,
                     StandardCopyOption.ATOMIC_MOVE,
                     StandardCopyOption.REPLACE_EXISTING);
-
             redisBackupTemporary = null;
-
             Files.move(
                     sentinelBackupTemporary,
                     sentinelBackup,
                     StandardCopyOption.ATOMIC_MOVE,
                     StandardCopyOption.REPLACE_EXISTING);
-
             sentinelBackupTemporary = null;
-
 
             // ======== 6. 返回部署成功 ========
             return OperationResultDTO.success(
@@ -206,9 +148,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
                     System.currentTimeMillis());
 
         } catch (AtomicMoveNotSupportedException e) {
-
             log.error("配置文件部署失败：文件系统不支持原子替换", e);
-
             return OperationResultDTO.failure(
                     BusinessCode.OPERATION_ERROR,
                     formalConfigDeployed
@@ -218,7 +158,6 @@ public class DeployConfigServiceImpl implements DeployConfigService {
                     System.currentTimeMillis());
 
         } catch (IllegalArgumentException e) {
-
             return OperationResultDTO.failure(
                     BusinessCode.OPERATION_ERROR,
                     e.getMessage(),
@@ -226,8 +165,6 @@ public class DeployConfigServiceImpl implements DeployConfigService {
                     System.currentTimeMillis());
 
         } catch (IOException | UnsupportedOperationException e) {
-
-            // 不记录配置文件正文，避免泄露其中的密码。
             log.error("配置文件部署失败", e);
 
             return OperationResultDTO.failure(
@@ -239,8 +176,8 @@ public class DeployConfigServiceImpl implements DeployConfigService {
                     System.currentTimeMillis());
 
         } finally {
-
             // ======== 7. 清理本次任务的临时文件 ========
+            // 若原子移动成功，无需手动清理，入参为null直接return。
             deleteTemporaryConfig(redisTemporary);
             deleteTemporaryConfig(sentinelTemporary);
             deleteTemporaryConfig(redisBackupTemporary);
@@ -276,21 +213,6 @@ public class DeployConfigServiceImpl implements DeployConfigService {
     }
 
     /**
-     * 读取并校验执行器本机配置的文件路径。
-     */
-    private Path resolveConfiguredPath(String value, String name) {
-        if (!StringUtils.hasText(value)) {
-            throw new IllegalArgumentException(name + "未配置");
-        }
-        Path path = Paths.get(value.trim()).normalize();
-        if (!path.isAbsolute() || path.getParent() == null
-                || path.getFileName() == null) {
-            throw new IllegalArgumentException(name + "必须是有效的绝对路径");
-        }
-        return path;
-    }
-
-    /**
      * 在目标配置所在目录创建临时文件。
      * Linux下设置文件权限为600，避免配置中的密码被其他用户读取。
      */
@@ -321,7 +243,6 @@ public class DeployConfigServiceImpl implements DeployConfigService {
         if (temporary == null) {
             return;
         }
-
         try {
             Files.deleteIfExists(temporary);
 

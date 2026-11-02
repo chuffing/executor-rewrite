@@ -129,7 +129,6 @@ public class AgentTaskController {
                 packagePath.toString()
         );
 
-
         try {
             agentTaskService.submitTask(request);
         } catch (RejectedExecutionException e) {
@@ -164,7 +163,6 @@ public class AgentTaskController {
         validateConfigFile(redisFile, "Redis");
         // 检查Sentinel配置文件是否为空、是否超过限制大小。
         validateConfigFile(sentinelFile, "Sentinel");
-
 
         Map<String, String> params = new HashMap<>(request.getParams());
 

@@ -31,7 +31,6 @@ public class StopRedisServiceImpl implements StopRedisService {
     public OperationResultDTO stopRedis() {
 
         long startTime = System.currentTimeMillis();
-
         // 1. Redis端口已经关闭时，目标状态已经满足，直接返回成功。
         try {
             if (isRedisStopped()) {
@@ -51,9 +50,7 @@ public class StopRedisServiceImpl implements StopRedisService {
             );
         }
 
-        // 脚本执行结果。
         CommandResultDTO commandResult;
-
         // 2. Redis仍在运行，执行停止脚本。
         try {
             commandResult = fixedScriptExecutor.executeScript(
@@ -80,7 +77,7 @@ public class StopRedisServiceImpl implements StopRedisService {
         } catch (IOException e) {
             return OperationResultDTO.failure(
                     BusinessCode.OPERATION_ERROR,
-                    "Redis停止脚本无法执行",
+                    "Redis停止操作失败：" + e.getMessage(),
                     startTime,
                     System.currentTimeMillis()
             );
@@ -89,8 +86,8 @@ public class StopRedisServiceImpl implements StopRedisService {
         // 3. 脚本执行结束后，统一等待Redis达到停止状态。
         // 即使脚本超时或退出码异常，只要最终已经停止，也认为操作成功。
         OperationResultDTO stopResult;
-
         try {
+            // 等待Redis停止，检查PING和端口状态。
             stopResult = waitForStopped(startTime);
 
         } catch (InterruptedException e) {
@@ -164,20 +161,13 @@ public class StopRedisServiceImpl implements StopRedisService {
         long timeoutMillis = TimeUnit.SECONDS.toMillis(
                 agentProperties.getOperation().getStopCheckTimeoutSeconds()
         );
-
-        long intervalMillis = agentProperties.getOperation()
-                .getStopCheckIntervalMillis();
-
+        long intervalMillis = agentProperties.getOperation().getStopCheckIntervalMillis();
         long beginTime = System.currentTimeMillis();
-
         boolean pingSuccess = true;
         boolean portOpen = true;
-
-        AgentProperties.RedisConfig redisConfig =
-                agentProperties.getRedis();
+        AgentProperties.RedisConfig redisConfig = agentProperties.getRedis();
 
         while (System.currentTimeMillis() - beginTime < timeoutMillis) {
-
             // 1. 检查Redis是否能够PING
             pingSuccess = RedisCheckUtil.isPingSuccessful(
                     redisConfig.getHost(),
@@ -185,13 +175,11 @@ public class StopRedisServiceImpl implements StopRedisService {
                     redisConfig.getPassword(),
                     redisConfig.getTimeout()
             );
-
             // 2. 检查Redis端口是否开放
             portOpen = RedisCheckUtil.isPortOpen(
                     redisConfig.getHost(),
                     redisConfig.getPort()
             );
-
             // 3. Redis不能PING并且端口已经关闭，说明Redis已停止。
             if (!pingSuccess && !portOpen) {
                 return OperationResultDTO.success(
@@ -200,11 +188,9 @@ public class StopRedisServiceImpl implements StopRedisService {
                         System.currentTimeMillis()
                 );
             }
-
             // 4. 等待下一次检查
             Thread.sleep(intervalMillis);
         }
-
         // 5. 超时后仍未停止
         if (!pingSuccess && portOpen) {
             return OperationResultDTO.failure(
@@ -214,7 +200,6 @@ public class StopRedisServiceImpl implements StopRedisService {
                     System.currentTimeMillis()
             );
         }
-
         return OperationResultDTO.failure(
                 BusinessCode.OPERATION_ERROR,
                 "Redis未在规定时间内完全停止",

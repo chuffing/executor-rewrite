@@ -31,10 +31,7 @@ public class StartRedisServiceImpl implements StartRedisService {
     public OperationResultDTO startRedis() {
 
         long startTime = System.currentTimeMillis();
-
-        AgentProperties.RedisConfig redisConfig =
-                agentProperties.getRedis();
-
+        AgentProperties.RedisConfig redisConfig = agentProperties.getRedis();
         // 1. Redis已经正常运行时，目标状态已经满足，直接返回成功。
         if (isRedisRunning(redisConfig)) {
             return OperationResultDTO.success(
@@ -46,7 +43,6 @@ public class StartRedisServiceImpl implements StartRedisService {
 
         // 脚本执行结果。
         CommandResultDTO commandResult;
-
         // 2. Redis尚未正常运行，执行启动脚本。
         try {
             commandResult = fixedScriptExecutor.executeScript(
@@ -83,8 +79,8 @@ public class StartRedisServiceImpl implements StartRedisService {
         // 3. 脚本执行结束后，统一等待Redis达到正常运行状态。
         // 即使脚本超时或退出码异常，只要Redis最终正常运行，也认为操作成功。
         OperationResultDTO startResult;
-
         try {
+            // 等待Redis启动并恢复服务。
             startResult = waitForStarted(startTime);
 
         } catch (InterruptedException e) {
@@ -100,7 +96,6 @@ public class StartRedisServiceImpl implements StartRedisService {
         if (startResult.isSuccess()) {
             return startResult;
         }
-
         // 5. Redis没有正常运行，再根据脚本执行结果返回具体失败原因。
         if (commandResult.isTimedOut()) {
             return OperationResultDTO.failure(
@@ -110,7 +105,6 @@ public class StartRedisServiceImpl implements StartRedisService {
                     System.currentTimeMillis()
             );
         }
-
         if (commandResult.getExitCode() != 0) {
             return OperationResultDTO.failure(
                     BusinessCode.OPERATION_ERROR,
@@ -119,7 +113,6 @@ public class StartRedisServiceImpl implements StartRedisService {
                     System.currentTimeMillis()
             );
         }
-
         // 6. 脚本正常退出，但Redis最终没有正常运行，返回状态检查结果。
         return startResult;
     }
@@ -133,15 +126,9 @@ public class StartRedisServiceImpl implements StartRedisService {
         long timeoutMillis = TimeUnit.SECONDS.toMillis(
                 agentProperties.getOperation().getStartCheckTimeoutSeconds()
         );
-
-        long intervalMillis = agentProperties.getOperation()
-                .getStartCheckIntervalMillis();
-
-        AgentProperties.RedisConfig redisConfig =
-                agentProperties.getRedis();
-
+        long intervalMillis = agentProperties.getOperation().getStartCheckIntervalMillis();
+        AgentProperties.RedisConfig redisConfig = agentProperties.getRedis();
         long beginTime = System.currentTimeMillis();
-
         while (System.currentTimeMillis() - beginTime < timeoutMillis) {
 
             // 1. 检查端口上是否为能够正常响应的普通Redis服务。
@@ -152,7 +139,6 @@ public class StartRedisServiceImpl implements StartRedisService {
                         System.currentTimeMillis()
                 );
             }
-
             // 2. 等待下一次检查。
             Thread.sleep(intervalMillis);
         }

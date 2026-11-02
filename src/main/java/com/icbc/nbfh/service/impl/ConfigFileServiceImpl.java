@@ -150,7 +150,6 @@ public class ConfigFileServiceImpl implements ConfigFileService {
         // ======== 4. 校验SHA256 ========
         if (!expectedSha256.equalsIgnoreCase(
                 FileChecksumUtil.calculateSha256(target))) {
-
             throw new ParameterException(
                     ParameterCode.CONFIG_CHECKSUM_MISMATCH,
                     name + "配置文件SHA256与平台提供的摘要不一致");
@@ -179,11 +178,8 @@ public class ConfigFileServiceImpl implements ConfigFileService {
         }
 
         // ======== 2. 删除两份暂存配置文件 ========
-        deleteIfExists(
-                requestDirectory.resolve(ConfigFileConstants.REDIS_FILE_NAME));
-
-        deleteIfExists(
-                requestDirectory.resolve(ConfigFileConstants.SENTINEL_FILE_NAME));
+        deleteIfExists(requestDirectory.resolve(ConfigFileConstants.REDIS_FILE_NAME));
+        deleteIfExists(requestDirectory.resolve(ConfigFileConstants.SENTINEL_FILE_NAME));
 
         // ======== 3. 删除本次任务目录 ========
         deleteIfExists(requestDirectory);
