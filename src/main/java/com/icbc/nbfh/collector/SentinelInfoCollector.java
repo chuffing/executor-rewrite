@@ -29,7 +29,10 @@ import java.util.Set;
  *   用“当前服务器 IP + 该 Sentinel 配置端口”组装自身节点，并标记在线；
  *   再调用 SENTINEL sentinels，把返回的其他哨兵合并进来；
  *   按 ip:port 去重，避免配置为 127.0.0.1 时出现重复或错误地址
- * 不可达的配置节点保留为离线兜底；未启用或未配置时返回空列表
+ *
+ * 不可达的配置节点保留为离线兜底；未启用时返回空列表
+ * 采集结果过滤 localhost/127.0.0.1；自身 IP 解析失败时不再使用 loopback 兜底，
+ * 最终未采集到任何有效节点时抛出异常
  */
 @Slf4j
 @Component
@@ -53,7 +56,8 @@ public class SentinelInfoCollector {
     /**
      * 采集 Sentinel 节点列表，包含每台可达哨兵自身和其他已发现哨兵
      *
-     * @return 节点列表；未启用/未配置时返回空列表，不抛异常
+     * @return 节点列表；未启用时返回空列表
+     * @throws IllegalStateException 已启用但未配置有效地址，或最终未采集到任何有效节点
      */
     public List<SentinelNodeDTO> collect() {
         AgentProperties.SentinelConfig config = properties.getSentinel();
@@ -64,23 +68,35 @@ public class SentinelInfoCollector {
         String masterName = resolveMasterName(config);
         List<HostPort> configuredNodes = configuredNodes(config);
         if (configuredNodes.isEmpty()) {
-            log.debug("未配置 Sentinel 地址，跳过 Sentinel 采集");
-            return Collections.emptyList();
+            throw new IllegalStateException("Sentinel 已启用但未配置有效的 Sentinel 地址");
         }
 
-        // ip:port -> node先预置配置节点为离线，查询成功的节点覆盖为在线
+        // ip:port -> node 先预置配置节点为离线，查询成功的节点覆盖为在线
+        // 过滤 loopback 地址：平台上不允许出现 127.0.0.1/localhost 的离线兜底
         Map<String, SentinelNodeDTO> nodes = new LinkedHashMap<>();
         for (HostPort hostPort : configuredNodes) {
+            if (isLoopbackIp(hostPort.host)) {
+                log.debug("跳过 loopback 配置节点的离线兜底: {}", hostPort.key());
+                continue;
+            }
             nodes.put(hostPort.key(), offlineNode(hostPort, masterName));
         }
 
         for (HostPort hostPort : configuredNodes) {
+            HostPort selfAddress;
+            try {
+                // 自身地址必须解析为真实 IP，禁止 localhost/127.0.0.1 兜底
+                selfAddress = resolveSelfAddress(hostPort);
+            } catch (Exception e) {
+                log.error("解析 Sentinel 自身地址失败，跳过 {}: {}", hostPort.key(), e.getMessage());
+                continue;
+            }
+
             try {
                 // SENTINEL sentinels 只返回其他哨兵
                 List<Map<String, String>> otherSentinels =
                         querySentinels(hostPort, masterName, config.getTimeout());
 
-                HostPort selfAddress = resolveSelfAddress(hostPort);
                 nodes.remove(hostPort.key());
                 nodes.put(selfAddress.key(), buildNode(
                         selfAddress.host, String.valueOf(selfAddress.port), "1", masterName));
@@ -111,13 +127,16 @@ public class SentinelInfoCollector {
         if (result.size() > MAX_NODE_SIZE) {
             result = new ArrayList<>(result.subList(0, MAX_NODE_SIZE));
         }
+        if (result.isEmpty()) {
+            throw new IllegalStateException("未采集到任何有效的 Sentinel 节点（已过滤 localhost/127.0.0.1）");
+        }
         return result;
     }
 
     /** master 名称优先取 service-name，未配置时使用 mymaster */
     private String resolveMasterName(AgentProperties.SentinelConfig config) {
         String masterName = StringUtils.hasText(config.getServiceName())
-                ? config.getServiceName().trim() : "mymaster";
+                ? config.getServiceName().trim() : "mymaster1";
         return masterName.length() > MAX_NAME_LENGTH
                 ? masterName.substring(0, MAX_NAME_LENGTH) : masterName;
     }
@@ -156,7 +175,7 @@ public class SentinelInfoCollector {
      * 查询一个 Sentinel 已发现的其他哨兵
      *
      * PING 失败会抛异常，由调用方保留离线兜底；PING 成功但
-     * ENTINEL sentinels 查询失败时返回空列表，当前哨兵自身仍会上报在线
+     * SENTINEL sentinels 查询失败时返回空列表，当前哨兵自身仍会上报在线
      */
     private List<Map<String, String>> querySentinels(HostPort hostPort,
                                                      String masterName,
@@ -210,15 +229,13 @@ public class SentinelInfoCollector {
 
     /**
      * 解析当前服务器对平台可见的 IP
-     *
-     * 优先使用 agent.host-ip / 自动识别的本机 IPv4；无法识别时，
-     * 非 loopback 配置回退配置地址，loopback 配置回退 127.0.0.1
+     * 优先使用 agent.host-ip / 自动识别的本机 IPv4；无法识别时，非 loopback 配置回退配置地址；loopback 配置不再兜底，直接抛异常
      */
     private String resolveServerIp(String configuredHost) {
         try {
             String serverIp = NetworkUtils.resolveHostIp(properties.getHostIp());
             String normalized = resolveNodeIp(serverIp);
-            if (StringUtils.hasText(normalized)) {
+            if (StringUtils.hasText(normalized) && !isLoopbackIp(normalized)) {
                 return normalized;
             }
         } catch (Exception e) {
@@ -227,11 +244,14 @@ public class SentinelInfoCollector {
 
         if (!isLoopbackHost(configuredHost)) {
             String normalized = resolveNodeIp(configuredHost);
-            if (StringUtils.hasText(normalized)) {
+            if (StringUtils.hasText(normalized) && !isLoopbackIp(normalized)) {
                 return normalized;
             }
         }
-        return "127.0.0.1";
+        // 去除 localhost / 127.0.0.1 兜底，无法解析真实 IP 时直接报错
+        throw new IllegalStateException(
+                "无法解析当前服务器有效 IP，禁止使用 localhost/127.0.0.1 兜底，配置地址: "
+                        + configuredHost);
     }
 
     /** 返回的其他哨兵是否与自身地址相同 */
@@ -255,10 +275,30 @@ public class SentinelInfoCollector {
                 || "::1".equals(value);
     }
 
+    /**
+     * 是否为 loopback/不可用地址（127.0.0.0/8、0.0.0.0、::1、localhost）
+     * 这类地址不允许上报到平台
+     */
+    private boolean isLoopbackIp(String ip) {
+        if (!StringUtils.hasText(ip)) {
+            return false;
+        }
+        String value = ip.trim();
+        if ("0.0.0.0".equals(value) || "::1".equals(value)
+                || "localhost".equalsIgnoreCase(value)) {
+            return true;
+        }
+        return value.startsWith("127.");
+    }
+
     private SentinelNodeDTO toNode(Map<String, String> item, String masterName) {
         String ip = resolveNodeIp(item.get("ip"));
         String port = item.get("port");
         if (!StringUtils.hasText(ip) || !isValidPort(port)) {
+            return null;
+        }
+        if (isLoopbackIp(ip)) {
+            log.debug("忽略 loopback 哨兵节点: {}:{}", ip, port);
             return null;
         }
         String status = isOfflineFlags(item.get("flags")) ? "0" : "1";
