@@ -41,9 +41,6 @@ public final class CollectConstant {
     /** 上报类型：平台手动采集 */
     public static final String COLLECT_TYPE_MANUAL = "1";
 
-    /** 无历史采样时的平均延迟兜底值 */
-    public static final String DEFAULT_PING_LATENCY = "0.00";
-
     /** 采集失败原因最大长度（平台字段限制） */
     public static final int MAX_ERROR_MSG_LENGTH = 500;
     /** 每轮最多重传的历史数据条数，避免平台恢复后单轮阻塞过久 */
@@ -53,8 +50,6 @@ public final class CollectConstant {
 
     /* ===== Redis 采集参数 ===== */
 
-    /** CPU 采样窗口，200ms 足够接近瞬时，又不至于因时钟粒度抖动 */
-    public static final int CPU_SAMPLE_WINDOW_MS = 200;
     /** 注册前 Redis 就绪探测次数 */
     public static final int REDIS_PING_TIMES = 3;
     /** Redis PING 正常应答 */

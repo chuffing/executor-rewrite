@@ -1,5 +1,6 @@
 package com.icbc.nbfh.collector;
 
+import com.icbc.nbfh.util.RedisInfoParser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

@@ -1,5 +1,6 @@
 package com.icbc.nbfh.collector;
 
+import com.icbc.nbfh.entity.SentinelAddress;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

@@ -1,16 +1,20 @@
 package com.icbc.nbfh.collector;
 
+import com.icbc.nbfh.client.RedisConnectionManager;
 import com.icbc.nbfh.common.constant.CollectConstant;
 import com.icbc.nbfh.common.constant.CommonConstant;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.MetricDataDTO;
 import com.icbc.nbfh.util.HostMemoryUtils;
 import com.icbc.nbfh.util.NetworkUtils;
+import com.icbc.nbfh.util.RedisInfoParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import redis.clients.jedis.Jedis;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.util.Enumeration;
@@ -20,15 +24,10 @@ import java.util.Map;
 
 /**
  * Redis 指标采集器：只读执行 PING / INFO，不修改生产数据
- *
- * 职责收敛为“采集口径 + 指标归一化”：连接池见 {@link RedisConnectionManager}，
- * INFO 文本解析见 {@link RedisInfoParser}，主机内存读取见 {@link HostMemoryUtils}
- *
-
- *   <li>Redis 命令加权平均延迟（微秒）：INFO commandstats 的 calls/usec 相邻两次差值；</li>
- *   <li>主从复制延迟（秒）：从节点取 {@code master_last_io_seconds_ago}，主节点为 0；</li>
- *   <li>{@code memUs}：Redis 内存使用量（GB），由 INFO used_memory（字节）换算；</li>
- *   <li>{@code pingLatency}：执行器 ping 平台的 HTTP 往返延迟（毫秒），由采集服务回填</li>
+ *   Redis 命令加权平均延迟（微秒）：INFO commandstats 的 calls/usec 相邻两次差值；
+ *   主从复制延迟（秒）：从节点取 master_last_io_seconds_ago，主节点为 0；
+ *   memUs：Redis 内存使用量（GB），由 INFO used_memory（字节）换算；
+ *   pingLatency：执行器 ping 平台的 HTTP 往返延迟（毫秒），由采集服务回填
 
  */
 @Slf4j
@@ -38,6 +37,12 @@ public class RedisInfoCollector {
     /** 逻辑核数，启动时取一次即可 */
     private static final int CPU_CORES = Math.max(1, Runtime.getRuntime().availableProcessors());
 
+    /** 百分比/两位小数格式 */
+    private static final String FORMAT_SCALE_2 = "%.2f";
+
+    /** 延迟/内存等三位小数格式 */
+    private static final String FORMAT_SCALE_3 = "%.3f";
+
     private final AgentProperties properties;
 
     private final RedisConnectionManager connectionManager;
@@ -46,6 +51,12 @@ public class RedisInfoCollector {
     private long lastCmdCalls = 0;
     private long lastCmdUsec = 0;
     private boolean hasLastSample = false;
+
+    /** 上一次采集的 CPU 累计秒数与采样时刻，用于计算相邻采集周期的平均 CPU 使用率 */
+    private double lastCpuSys = 0D;
+    private double lastCpuUser = 0D;
+    private long lastCpuSampleNanos = 0L;
+    private boolean hasLastCpuSample = false;
 
     public RedisInfoCollector(AgentProperties properties, RedisConnectionManager connectionManager) {
         this.properties = properties;
@@ -62,7 +73,7 @@ public class RedisInfoCollector {
             // INFO all 已包含 server/memory/stats/replication/cpu/commandstats 等全部 section
             Map<String, String> info = RedisInfoParser.parse(jedis.info("all"));
 
-            collectCpu(data, info, jedis);
+            collectCpu(data, info);
             collectMemory(data, info);
             collectLatency(data, info);
             collectNetworkAndQps(data, info);
@@ -108,26 +119,39 @@ public class RedisInfoCollector {
     }
 
     /**
-     * CPU 占用率：Redis 进程 used_cpu_sys/user 在采样窗口内的增量 / 整机逻辑核数
+     * CPU 占用率：Redis 进程 used_cpu_sys/user 在相邻两次采集之间的增量 / 间隔 / 整机逻辑核数
+     * 首次采集没有基线，上报 0.00；Redis 重启导致计数回退时本周期同样回退为 0.00，不产生负值
      */
-    private void collectCpu(MetricDataDTO data,
-                            Map<String, String> info,
-                            Jedis jedis) {
-        double sys1 = RedisInfoParser.toDouble(info.get("used_cpu_sys"));
-        double user1 = RedisInfoParser.toDouble(info.get("used_cpu_user"));
-        long startNanos = System.nanoTime();
-        sleepQuietly(CollectConstant.CPU_SAMPLE_WINDOW_MS);
+    private void collectCpu(MetricDataDTO data, Map<String, String> info) {
+        double sys = RedisInfoParser.toDouble(info.get("used_cpu_sys"));
+        double user = RedisInfoParser.toDouble(info.get("used_cpu_user"));
+        long nowNanos = System.nanoTime();
 
-        Map<String, String> cpuInfo = RedisInfoParser.parse(jedis.info("cpu"));
-        double sys2 = RedisInfoParser.toDouble(cpuInfo.get("used_cpu_sys"));
-        double user2 = RedisInfoParser.toDouble(cpuInfo.get("used_cpu_user"));
-        double elapsedSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
-        if (elapsedSeconds <= 0) {
+        if (!hasLastCpuSample) {
+            saveCpuSample(sys, user, nowNanos);
             data.setCpuPer("0.00");
             return;
         }
-        double cpuPercent = ((sys2 - sys1) + (user2 - user1)) / elapsedSeconds / CPU_CORES * 100.0;
+
+        double elapsedSeconds = (nowNanos - lastCpuSampleNanos) / 1_000_000_000.0;
+        double consumedSeconds = (sys - lastCpuSys) + (user - lastCpuUser);
+        saveCpuSample(sys, user, nowNanos);
+
+        if (elapsedSeconds <= 0 || consumedSeconds < 0) {
+            // 时钟异常或 Redis 重启导致计数器重置，本周期按 0 处理
+            data.setCpuPer("0.00");
+            return;
+        }
+        double cpuPercent = consumedSeconds / elapsedSeconds / CPU_CORES * 100.0;
         data.setCpuPer(format(clamp(cpuPercent, 0.0, 100.0), 2));
+    }
+
+    /** 记录本次 CPU 累计值基线 */
+    private void saveCpuSample(double sys, double user, long sampleNanos) {
+        this.lastCpuSys = sys;
+        this.lastCpuUser = user;
+        this.lastCpuSampleNanos = sampleNanos;
+        this.hasLastCpuSample = true;
     }
 
     /**
@@ -182,7 +206,7 @@ public class RedisInfoCollector {
     }
 
     /**
-     * 延迟 1/3：命令加权平均延迟（微秒）
+     * 命令加权平均延迟（微秒）
      */
     private void collectLatency(MetricDataDTO data, Map<String, String> info) {
         long[] commandStats = RedisInfoParser.sumCommandStats(info);
@@ -214,10 +238,9 @@ public class RedisInfoCollector {
     }
 
     /**
-     * 节点身份 + 延迟 2/3：主从复制延迟（秒）
-     *
-     * 平台校验要求 masterHost/masterPort 必填；主节点没有上游 master，
-     * 这里回填自身地址，从节点优先使用 INFO replication 的 master_host/master_port
+     * 主从复制延迟（秒）
+     * 平台校验要求 masterHost/masterPort 必填；主节点没有上游 master，回填自身地址
+     * 从节点优先使用 INFO replication 的 master_host/master_port
      */
     private void collectIdentityAndReplication(MetricDataDTO data, Map<String, String> info) {
         String role = normalizeRole(info.get("role"));
@@ -368,8 +391,20 @@ public class RedisInfoCollector {
         return StringUtils.hasText(value) ? value.trim() : null;
     }
 
+    /**
+     * 固定精度的格式化
+     */
     private String format(double value, int scale) {
-        return String.format(Locale.ROOT, "%." + scale + "f", value);
+        switch (scale) {
+            case 2:
+                return String.format(Locale.ROOT, FORMAT_SCALE_2, value);
+            case 3:
+                return String.format(Locale.ROOT, FORMAT_SCALE_3, value);
+            default:
+                return BigDecimal.valueOf(value)
+                        .setScale(scale, RoundingMode.HALF_UP)
+                        .toPlainString();
+        }
     }
 
     private double clamp(double value, double min, double max) {
@@ -381,13 +416,5 @@ public class RedisInfoCollector {
             return null;
         }
         return text.length() <= maxLength ? text : text.substring(0, maxLength);
-    }
-
-    private void sleepQuietly(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 }
