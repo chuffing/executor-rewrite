@@ -16,8 +16,7 @@ public class WebConfig implements WebMvcConfigurer {
     private static final String[] PLATFORM_INBOUND_PATHS = {
             "/api/agent/task",
             "/api/agent/config/deploy",
-            "/api/agent/version/deploy",
-            "/executor/**"
+            "/api/agent/version/deploy"
     };
 
     private final PlatformTokenInterceptor platformTokenInterceptor;

@@ -3,6 +3,7 @@ package com.icbc.nbfh.collector;
 import com.icbc.nbfh.common.constant.CollectConstant;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.SentinelNodeDTO;
+import com.icbc.nbfh.entity.SentinelAddress;
 import com.icbc.nbfh.util.NetworkUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -24,10 +25,10 @@ import java.util.Set;
 /**
  * Sentinel 节点采集器
  *
- * Redis 的 {@code SENTINEL sentinels <master-name>} 只返回其他哨兵，不包含当前接收命令的哨兵自身，
+ * Redis 的 SENTINEL sentinels <master-name>只返回其他哨兵，不包含当前接收命令的哨兵自身，
  * 因此执行器对每个可达的配置哨兵：
  *   用“当前服务器 IP + 该 Sentinel 配置端口”组装自身节点，并标记在线；
- *   再调用 {@code SENTINEL sentinels}，把返回的其他哨兵合并进来；
+ *   再调用 SENTINEL sentinels，把返回的其他哨兵合并进来；
  *   按 ip:port 去重，避免配置为 127.0.0.1 时出现重复或错误地址
  *
  * 不可达的配置节点保留为离线兜底；未启用时返回空列表

@@ -53,8 +53,6 @@ public final class CollectConstant {
 
     /* ===== Redis 采集参数 ===== */
 
-    /** CPU 采样窗口，200ms 足够接近瞬时，又不至于因时钟粒度抖动 */
-    public static final int CPU_SAMPLE_WINDOW_MS = 200;
     /** 注册前 Redis 就绪探测次数 */
     public static final int REDIS_PING_TIMES = 3;
     /** Redis PING 正常应答 */

@@ -1,4 +1,4 @@
-package com.icbc.nbfh.collector;
+package com.icbc.nbfh.client;
 
 import com.icbc.nbfh.common.constant.CollectConstant;
 import com.icbc.nbfh.config.AgentProperties;

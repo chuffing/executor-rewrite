@@ -1,7 +1,7 @@
 package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.client.PlatformClient;
-import com.icbc.nbfh.collector.RedisConnectionManager;
+import com.icbc.nbfh.client.RedisConnectionManager;
 import com.icbc.nbfh.collector.RedisInfoCollector;
 import com.icbc.nbfh.common.constant.CollectConstant;
 import com.icbc.nbfh.common.constant.CommonConstant;

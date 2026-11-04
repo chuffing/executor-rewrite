@@ -1,7 +1,8 @@
-package com.icbc.nbfh.collector;
+package com.icbc.nbfh.entity;
 
 import com.icbc.nbfh.common.constant.CollectConstant;
 import com.icbc.nbfh.util.NetworkUtils;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 
@@ -10,6 +11,7 @@ import org.springframework.util.StringUtils;
  * 负责地址解析与合法性校验：端口 1~65535，host 需满足平台 IPv4/varchar(20) 约束
  */
 @Slf4j
+@Getter
 public final class SentinelAddress {
 
     private final String host;
@@ -18,14 +20,6 @@ public final class SentinelAddress {
     public SentinelAddress(String host, int port) {
         this.host = host;
         this.port = port;
-    }
-
-    public String getHost() {
-        return host;
-    }
-
-    public int getPort() {
-        return port;
     }
 
     /** 唯一标识：ip:port */

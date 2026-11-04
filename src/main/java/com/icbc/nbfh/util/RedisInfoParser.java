@@ -1,4 +1,4 @@
-package com.icbc.nbfh.collector;
+package com.icbc.nbfh.util;
 
 import org.springframework.util.StringUtils;
 
