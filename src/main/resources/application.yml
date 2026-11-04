@@ -51,10 +51,13 @@ agent:
   schedule:
     # 指标采集上报间隔：5 分钟
     collect-interval: 300000
+#    collect-interval: 10000
     # 心跳间隔：30 秒
     heartbeat-interval: 30000
+#    heartbeat-interval: 5000
     # 注册/二次注册重试间隔：30 秒
     register-interval: 30000
+#    register-interval: 3000
 
   # 首次注册延迟（毫秒）
   register-initial-delay: 5000

@@ -6,6 +6,7 @@ import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.HeartbeatRequestDTO;
 import com.icbc.nbfh.service.HeartbeatService;
 import com.icbc.nbfh.service.RegisterService;
+import com.icbc.nbfh.util.AuthFailureClassifier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -60,7 +61,7 @@ public class HeartbeatServiceImpl implements HeartbeatService {
             }
             lastFailureLogAt = 0L;
         } catch (BusinessException e) {
-            if (isAuthenticationError(e.getMessage())) {
+            if (AuthFailureClassifier.isCredentialInvalid(e)) {
                 // token 失效/平台记录被清理：清空本地凭证，注册任务会立即重新注册
                 registerService.invalidateToken();
                 log.warn("平台拒绝执行器心跳（{}），已清除本地 token 并等待重新注册", e.getMessage());
@@ -80,16 +81,5 @@ public class HeartbeatServiceImpl implements HeartbeatService {
         } else {
             log.debug("心跳发送失败: {}", e.getMessage());
         }
-    }
-
-    /** 平台端 token 失效/身份不匹配时返回的错误信息 */
-    private boolean isAuthenticationError(String message) {
-        if (!StringUtils.hasText(message)) {
-            return false;
-        }
-        String lower = message.toLowerCase();
-        return lower.contains("token")
-                || message.contains("无效的注册码")
-                || message.contains("身份不匹配");
     }
 }

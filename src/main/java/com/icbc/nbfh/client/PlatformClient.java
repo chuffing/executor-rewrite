@@ -310,7 +310,7 @@ public class PlatformClient {
         if (code != HttpStatus.OK.value()) {
             String message = defaultMessage(json.getString("message"),
                     defaultMessage(json.getString("msg"), "平台返回错误码 " + code));
-            throw new BusinessException(BusinessCode.OPERATION_ERROR.getCode(), message);
+            throw new BusinessException(code, message);
         }
         return json;
     }

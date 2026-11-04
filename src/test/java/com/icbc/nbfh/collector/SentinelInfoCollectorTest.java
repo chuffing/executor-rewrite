@@ -4,6 +4,7 @@ import com.icbc.nbfh.common.constant.CommonConstant;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.SentinelNodeDTO;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -31,7 +32,7 @@ class SentinelInfoCollectorTest {
 
     /** Sentinel 对外 IP */
     private static final String SENTINEL_IP = "172.20.10.3";
-    private static final String MYMASTER = "senD";
+    private static final String MYMASTER = "mymaster";
 
     /** Sentinel 对外端口 */
     private static final int SENTINEL_PORT = 26379;
@@ -117,20 +118,21 @@ class SentinelInfoCollectorTest {
     }
 
     @Test
-    void shouldReportConfiguredNodeOfflineWhenSentinelUnreachable() throws Exception {
-        int port;
-        try (ServerSocket probe = new ServerSocket(0, 1,
-                InetAddress.getByName(CommonConstant.DEFAULT_LOCALHOST_IP))) {
-            port = probe.getLocalPort();
-        }
+    @DisplayName("配置节点不可达时应上报离线兜底（非 loopback 地址）")
+    void shouldReportConfiguredNodeOfflineWhenSentinelUnreachable() {
+        // 192.0.2.1 是 RFC 5737 保留测试地址，保证不可达且非 loopback
+        AgentProperties props = properties(26379);
+        props.getSentinel().setHost("192.0.2.1");
+        SentinelInfoCollector collector = new SentinelInfoCollector(props);
 
-        AgentProperties properties = properties(port);
-        List<SentinelNodeDTO> nodes = new SentinelInfoCollector(properties).collect();
-        printNodes("shouldReportConfiguredNodeOfflineWhenSentinelUnreachable", nodes);
+        List<SentinelNodeDTO> nodes = collector.collect();
+        System.out.println(nodes);
 
-        assertEquals(1, nodes.size());
-        assertEquals("0", nodes.get(0).getSentinelStatus());
-        assertEquals(String.valueOf(port), nodes.get(0).getNodePort());
+        assertEquals(1, nodes.size(), "应保留 1 条离线兜底");
+        SentinelNodeDTO node = nodes.get(0);
+        assertEquals("192.0.2.1", node.getNodeIp());
+        assertEquals("26379", node.getNodePort());
+        assertEquals("0", node.getSentinelStatus(), "不可达节点应为离线");
     }
 
     private AgentProperties properties(int port) {

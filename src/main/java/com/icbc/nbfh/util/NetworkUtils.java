@@ -1,5 +1,6 @@
 package com.icbc.nbfh.util;
 
+import com.icbc.nbfh.common.constant.CommonConstant;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedReader;
@@ -54,11 +55,10 @@ public final class NetworkUtils {
     }
 
     /** 平台字段长度限制为 varchar(20)，IPv6 无法存储，直接拒绝并提示 */
-    private static String validateIpv4(String ip) {
-        if (ip.contains(":")) {
-            throw new IllegalArgumentException(
-                    "hostIp 仅支持 IPv4（平台 host_ip 字段为 varchar(20)）: " + ip);
-        }
+    private static String validateIpv4(String ip) {        if (ip.contains(":")) {
+        throw new IllegalArgumentException(
+                "hostIp 仅支持 IPv4（平台 host_ip 字段为 varchar(20)）: " + ip);
+    }
         if (ip.length() > 20) {
             throw new IllegalArgumentException("hostIp 长度不能超过 20: " + ip);
         }
@@ -171,5 +171,58 @@ public final class NetworkUtils {
                 && !address.isLoopbackAddress()
                 && !address.isLinkLocalAddress()
                 && !address.isAnyLocalAddress();
+    }
+
+    /**
+     * 是否为「未配置或 loopback」主机：localhost、127.0.0.1、0.0.0.0、::1
+     * 未指定地址即本机
+     */
+    public static boolean isLoopbackHost(String host) {
+        if (host == null || host.trim().isEmpty()) {
+            return true;
+        }
+        String value = host.trim();
+        return CommonConstant.DEFAULT_LOCALHOST_IP.equals(value)
+                || CommonConstant.ANY_IP.equals(value)
+                || CommonConstant.LOCALHOST.equalsIgnoreCase(value)
+                || CommonConstant.LOCALHOST_IPV6.equals(value);
+    }
+
+    /**
+     * 是否为 loopback/不可用 IP（127.0.0.0/8、0.0.0.0、::1、localhost）
+     * 用于过滤待上报地址
+     */
+    public static boolean isLoopbackIp(String ip) {
+        if (ip == null || ip.trim().isEmpty()) {
+            return false;
+        }
+        String value = ip.trim();
+        if (CommonConstant.ANY_IP.equals(value)
+                || CommonConstant.LOCALHOST_IPV6.equals(value)
+                || CommonConstant.LOCALHOST.equalsIgnoreCase(value)) {
+            return true;
+        }
+        return value.startsWith("127.");
+    }
+
+    /**
+     * 转为平台可存储的 IPv4 字符串
+     * @return 无法解析/超长/为 IPv6 时返回 null
+     */
+    public static String toPlatformIpv4(String host) {
+        if (host == null || host.trim().isEmpty()) {
+            return null;
+        }
+        String value = host.trim();
+        if (value.length() <= CommonConstant.MAX_HOST_IP_LENGTH && !value.contains(":")) {
+            return value;
+        }
+        try {
+            String ip = InetAddress.getByName(value).getHostAddress();
+            return ip.length() <= CommonConstant.MAX_HOST_IP_LENGTH && !ip.contains(":") ? ip : null;
+        } catch (Exception e) {
+            log.debug("解析地址 {} 为 IPv4 失败: {}", value, e.getMessage());
+            return null;
+        }
     }
 }

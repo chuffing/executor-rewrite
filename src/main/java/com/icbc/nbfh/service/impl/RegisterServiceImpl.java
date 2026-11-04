@@ -1,39 +1,34 @@
 package com.icbc.nbfh.service.impl;
 
-import cn.hutool.core.io.FileUtil;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
 import com.icbc.nbfh.client.PlatformClient;
+import com.icbc.nbfh.collector.RedisConnectionManager;
 import com.icbc.nbfh.collector.RedisInfoCollector;
+import com.icbc.nbfh.common.constant.CollectConstant;
 import com.icbc.nbfh.common.constant.CommonConstant;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.RegisterRequestDTO;
 import com.icbc.nbfh.entity.DTO.RegisterResultDTO;
 import com.icbc.nbfh.service.RegisterService;
+import com.icbc.nbfh.store.AgentState;
+import com.icbc.nbfh.store.AgentStateStore;
 import com.icbc.nbfh.util.NetworkUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.io.File;
-import java.net.Inet4Address;
-import java.net.InetAddress;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
  * 注册服务实现
- *
  * 平台端以 hostIp + executorPort 作为执行器唯一标识，注册分两个阶段：
- *   执行器启动时先探测本地 Redis，把结果作为 {@code redisReady} 上报：
- *       Redis 未就绪时只注册执行器（平台不创建/绑定实例），先让平台能看到执行器；
- *   本地 Redis 就绪后（注册任务每 30s 补齐），再次注册并携带
- *       {@code redisReady=true} + {@code redisInfo}，平台创建 redis_instance 并写回
- *       instanceId；执行器持久化 bound/instanceId，之后才允许采集上报
+ *
+ *   执行器启动时先探测本地 Redis，把结果作为 redisReady 上报；
+ *   Redis 未就绪时只注册执行器（平台不创建/绑定实例），先让平台能看到执行器；
+ *   Redis 就绪后（注册任务每 30s 补齐），再次注册并携带{redisReady=true,redisInfo}，
+ *   平台新增redis_instance记录，返回instanceId，
+ *   执行器持久化 bound/instanceId，之后允许采集上报
  */
 @Slf4j
 @Service
@@ -44,6 +39,10 @@ public class RegisterServiceImpl implements RegisterService {
     private final PlatformClient platformClient;
 
     private final RedisInfoCollector redisInfoCollector;
+
+    private final RedisConnectionManager redisConnectionManager;
+
+    private final AgentStateStore stateStore;
 
     private final int agentPort;
 
@@ -61,15 +60,19 @@ public class RegisterServiceImpl implements RegisterService {
 
     private volatile long lastFailureLogAt = 0L;
 
-    private boolean stateLoaded;
+    private volatile boolean stateLoaded;
 
     public RegisterServiceImpl(AgentProperties properties,
                                PlatformClient platformClient,
                                RedisInfoCollector redisInfoCollector,
+                               RedisConnectionManager redisConnectionManager,
+                               AgentStateStore stateStore,
                                @Value("${server.port:9101}") int agentPort) {
         this.properties = properties;
         this.platformClient = platformClient;
         this.redisInfoCollector = redisInfoCollector;
+        this.redisConnectionManager = redisConnectionManager;
+        this.stateStore = stateStore;
         this.agentPort = agentPort;
     }
 
@@ -120,7 +123,7 @@ public class RegisterServiceImpl implements RegisterService {
             }
 
             // 注册前自检 Redis，未就绪时不带 redisInfo，只注册执行器
-            boolean redisReady = redisInfoCollector.isRedisReady();
+            boolean redisReady = redisConnectionManager.isRedisReady();
             Map<String, String> redisInfo = null;
             if (redisReady) {
                 try {
@@ -181,10 +184,9 @@ public class RegisterServiceImpl implements RegisterService {
     }
 
     /**
-     * 读取本地 token 文件
+     * 首次使用时从本地凭证文件恢复状态
      *
-     * 新格式为 JSON：{token, hostIp, executorPort, instanceId, bound}；
-     * 兼容旧格式：agentId|token 或纯 token，以及无 instanceId 的旧 JSON
+     * 凭证中的执行器地址与当前地址不一致时丢弃旧 token，避免平台记录与执行器错位</p>
      */
     private void loadStateIfNeeded() {
         if (stateLoaded) {
@@ -192,79 +194,37 @@ public class RegisterServiceImpl implements RegisterService {
         }
         stateLoaded = true;
 
-        String tokenFilePath = properties.getPlatform().getTokenFile();
-        if (!StringUtils.hasText(tokenFilePath)) {
-            return;
-        }
-        File tokenFile = new File(tokenFilePath.trim());
-        if (!tokenFile.isFile()) {
-            return;
-        }
-        try {
-            String content = FileUtil.readString(tokenFile, StandardCharsets.UTF_8).trim();
-            if (!StringUtils.hasText(content)) {
-                return;
-            }
-            if (content.startsWith("{")) {
-                loadJsonState(content, tokenFile);
-            } else {
-                // 兼容历史格式：agentId|token 或纯 token，绑定信息缺失，下次注册时补齐
-                String legacyToken = content.contains("|")
-                        ? content.substring(content.lastIndexOf('|') + 1).trim()
-                        : content;
-                if (StringUtils.hasText(legacyToken)) {
-                    token = legacyToken;
-                    bound = false;
-                    instanceId = "";
-                    log.info("从 {} 读取到旧格式执行器 token，将重新注册以补齐绑定关系",
-                            tokenFile.getAbsolutePath());
-                }
-            }
-        } catch (Exception e) {
-            log.warn("读取本地 token 文件失败，将重新注册: {}", e.getMessage());
-            clearLocalCredential();
-        }
-    }
-
-    private void loadJsonState(String content, File tokenFile) {
-        JSONObject state = JSON.parseObject(content);
-        String savedToken = state.getString("token");
-        if (!StringUtils.hasText(savedToken)) {
-            savedToken = state.getString("executorToken");
-        }
-        if (!StringUtils.hasText(savedToken)) {
+        AgentState state = stateStore.load();
+        if (state == null || !state.hasToken()) {
             return;
         }
 
-        String savedHostIp = state.getString("hostIp");
-        String savedPort = state.getString("executorPort");
         String currentHostIp = safeResolveHostIp();
         String currentPort = String.valueOf(agentPort);
-
-        boolean addressChanged = StringUtils.hasText(savedHostIp)
-                && StringUtils.hasText(currentHostIp)
-                && (!savedHostIp.equals(currentHostIp)
-                || (StringUtils.hasText(savedPort) && !savedPort.equals(currentPort)));
-        if (addressChanged) {
+        if (addressChanged(state.getHostIp(), state.getExecutorPort(), currentHostIp, currentPort)) {
             log.warn("本地 token 对应的执行器地址已变化（{}:{} -> {}:{}），丢弃旧 token 并重新注册",
-                    savedHostIp, savedPort, currentHostIp, currentPort);
+                    state.getHostIp(), state.getExecutorPort(), currentHostIp, currentPort);
             clearLocalCredential();
             return;
         }
 
-        token = savedToken.trim();
-        hostIp = savedHostIp;
-        executorPort = StringUtils.hasText(savedPort) ? savedPort : currentPort;
-        instanceId = state.getString("instanceId");
-        Boolean savedBound = state.getBoolean("bound");
-        // 兼容旧版本文件：无 bound 时按 instanceId 是否为空判断
-        bound = savedBound != null ? savedBound
-                : StringUtils.hasText(instanceId);
-        if (!StringUtils.hasText(instanceId)) {
-            bound = false;
+        token = state.getToken();
+        hostIp = state.getHostIp();
+        executorPort = StringUtils.hasText(state.getExecutorPort())
+                ? state.getExecutorPort() : currentPort;
+        instanceId = state.getInstanceId();
+        bound = state.isBound();
+    }
+
+    private boolean addressChanged(String savedHostIp, String savedPort,
+                                   String currentHostIp, String currentPort) {
+        if (!StringUtils.hasText(savedHostIp) || !StringUtils.hasText(currentHostIp)) {
+            return false;
         }
-        log.info("从 {} 读取到执行器状态（hostIp={}, executorPort={}, bound={}, instanceId={}）",
-                tokenFile.getAbsolutePath(), hostIp, executorPort, bound, instanceId);
+        if (!savedHostIp.equals(currentHostIp)) {
+            return true;
+        }
+        return StringUtils.hasText(savedPort) && !savedPort.equals(currentPort);
     }
 
     /**
@@ -276,76 +236,31 @@ public class RegisterServiceImpl implements RegisterService {
         if (collected != null) {
             redisInfo.putAll(collected);
         }
-        redisInfo.put("host", redisHostForPlatform(agentHostIp));
-        if (!redisInfo.containsKey("tcp_port")) {
-            redisInfo.put("tcp_port", String.valueOf(properties.getRedis().getPort()));
-        }
-        if (!redisInfo.containsKey("role")) {
-            redisInfo.put("role", "MASTER");
-        }
-        if (!redisInfo.containsKey("version")) {
-            redisInfo.put("version", "0.0.0");
-        }
-        if (!redisInfo.containsKey("run_id")) {
-            redisInfo.put("run_id", "0000000000000000000000000000000000000000");
-        }
+        redisInfo.put(CollectConstant.INFO_HOST, redisHostForPlatform(agentHostIp));
+        redisInfo.putIfAbsent(CollectConstant.INFO_TCP_PORT,
+                String.valueOf(properties.getRedis().getPort()));
+        redisInfo.putIfAbsent(CollectConstant.INFO_ROLE, CollectConstant.ROLE_MASTER);
+        redisInfo.putIfAbsent(CollectConstant.INFO_VERSION, CollectConstant.DEFAULT_REDIS_VERSION);
+        redisInfo.putIfAbsent(CollectConstant.INFO_RUN_ID, CollectConstant.EMPTY_RUN_ID);
         return redisInfo;
     }
 
     /**
      * 平台端 redis_instance.host_ip 为 varchar(20)，这里把本机/主机名转换为 IPv4
-     * Redis 与应用同机（127.0.0.1/localhost）时，用执行器对平台可见的地址代替
+     *
+     * Redis 与应用同机（127.0.0.1/localhost）时，用执行器对平台可见的地址代替</p>
      */
     private String redisHostForPlatform(String agentHostIp) {
         String redisHost = properties.getRedis().getHost();
-        if (!StringUtils.hasText(redisHost)) {
+        if (NetworkUtils.isLoopbackHost(redisHost)) {
             return StringUtils.hasText(agentHostIp) ? agentHostIp : CommonConstant.DEFAULT_LOCALHOST_IP;
         }
-        redisHost = redisHost.trim();
-        if (CommonConstant.DEFAULT_LOCALHOST_IP.equals(redisHost)
-                || CommonConstant.ANY_IP.equals(redisHost)
-                || CommonConstant.LOCALHOST.equalsIgnoreCase(redisHost)
-                || CommonConstant.LOCALHOST_IPV6.equals(redisHost)) {
-            return StringUtils.hasText(agentHostIp) ? agentHostIp : CommonConstant.DEFAULT_LOCALHOST_IP;
-        }
-        try {
-            InetAddress address = InetAddress.getByName(redisHost);
-            if (address instanceof Inet4Address) {
-                String ip = address.getHostAddress();
-                return ip.length() <= 20 ? ip : redisHost;
-            }
-        } catch (Exception e) {
-            log.debug("解析 Redis host {} 失败，按原值上报: {}", redisHost, e.getMessage());
-        }
-        return redisHost;
+        String ipv4 = NetworkUtils.toPlatformIpv4(redisHost.trim());
+        return ipv4 != null ? ipv4 : redisHost.trim();
     }
 
     private void saveState() {
-        File tokenFile = new File(properties.getPlatform().getTokenFile().trim());
-        try {
-            FileUtil.mkParentDirs(tokenFile);
-            JSONObject state = new JSONObject(true);
-            state.put("token", token);
-            state.put("hostIp", hostIp);
-            state.put("executorPort", executorPort);
-            state.put("instanceId", instanceId);
-            state.put("bound", bound);
-            state.put("registeredAt", System.currentTimeMillis());
-            FileUtil.writeString(state.toJSONString(), tokenFile, StandardCharsets.UTF_8);
-            restrictFilePermission(tokenFile);
-        } catch (Exception e) {
-            log.warn("持久化 token 失败（重启后会重新注册）: {}", e.getMessage());
-        }
-    }
-
-    /** token 属于敏感信息，Linux 下尽量设置为仅属主可读写 */
-    private void restrictFilePermission(File file) {
-        try {
-            Files.setPosixFilePermissions(file.toPath(),
-                    PosixFilePermissions.fromString("rw-------"));
-        } catch (Exception ignored) {
-            // Windows 等非 POSIX 文件系统忽略
-        }
+        stateStore.save(new AgentState(token, hostIp, executorPort, instanceId, bound));
     }
 
     private String safeResolveHostIp() {
@@ -391,22 +306,7 @@ public class RegisterServiceImpl implements RegisterService {
         hostIp = null;
         executorPort = null;
         lastRegisterAttemptAt = 0L;
-        deleteTokenFile();
-    }
-
-    private void deleteTokenFile() {
-        String path = properties.getPlatform().getTokenFile();
-        if (!StringUtils.hasText(path)) {
-            return;
-        }
-        try {
-            File tokenFile = new File(path.trim());
-            if (tokenFile.exists() && !tokenFile.delete()) {
-                log.warn("删除本地 token 文件失败: {}", tokenFile.getAbsolutePath());
-            }
-        } catch (Exception e) {
-            log.warn("删除本地 token 文件异常: {}", e.getMessage());
-        }
+        stateStore.delete();
     }
 
     @Override
@@ -416,7 +316,7 @@ public class RegisterServiceImpl implements RegisterService {
         bound = false;
         // 下次调用立即重新注册，不等待重试间隔
         lastRegisterAttemptAt = 0L;
-        deleteTokenFile();
+        stateStore.delete();
         log.warn("已清除本地执行器 token 与绑定状态，等待重新注册");
     }
 

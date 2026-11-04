@@ -10,4 +10,7 @@ public class CommonConstant {
     /** 本机回环 IPv6 地址 */
     public static final String LOCALHOST_IPV6 = "::1";
 
+    /** 平台 host 类字段长度上限（varchar(20)） */
+    public static final int MAX_HOST_IP_LENGTH = 20;
+
 }

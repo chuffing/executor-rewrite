@@ -1,10 +1,10 @@
 package com.icbc.nbfh.common.exception;
 
 /**
- * HTTP标准状态码。
+ * HTTP标准状态码
  *
- * <p>用于统一ResultBean的code和msg，不存放项目自定义异常码。
- * Controller直接返回ResultBean时，这里的code不会改变真实HTTP响应状态。</p>
+ * 用于统一ResultBean的code和msg，不存放项目自定义异常码
+ * Controller直接返回ResultBean时，这里的code不会改变真实HTTP响应状态
  */
 public enum ErrorCodeInfo {
 

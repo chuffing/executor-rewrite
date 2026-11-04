@@ -2,9 +2,10 @@ package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.client.PlatformClient;
 import com.icbc.nbfh.collector.RedisInfoCollector;
+import com.icbc.nbfh.collector.SentinelInfoCollector;
+import com.icbc.nbfh.common.constant.CollectConstant;
 import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.exception.BusinessException;
-import com.icbc.nbfh.collector.SentinelInfoCollector;
 import com.icbc.nbfh.config.AgentProperties;
 import com.icbc.nbfh.entity.DTO.MetricDataDTO;
 import com.icbc.nbfh.entity.DTO.MetricReportDTO;
@@ -12,6 +13,7 @@ import com.icbc.nbfh.entity.DTO.SentinelNodeDTO;
 import com.icbc.nbfh.service.CollectService;
 import com.icbc.nbfh.service.RegisterService;
 import com.icbc.nbfh.store.LocalMetricStore;
+import com.icbc.nbfh.util.AuthFailureClassifier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -29,9 +31,6 @@ import java.util.List;
 @Slf4j
 @Service
 public class CollectServiceImpl implements CollectService {
-
-    /** 每轮最多重传的历史数据条数，避免平台恢复后单轮阻塞过久 */
-    private static final int MAX_RETRY_BATCH = 50;
 
     private final RedisInfoCollector collector;
     private final SentinelInfoCollector sentinelInfoCollector;
@@ -59,20 +58,8 @@ public class CollectServiceImpl implements CollectService {
 
     @Override
     public void collectAndReport() {
-        // 未注册时先尝试注册；注册失败则跳过本轮，避免无效采集与堆积
-        if (!registerService.hasToken() && !registerService.registerIfNeeded()) {
-            logUnregistered();
+        if (!ensureRegistered()) {
             return;
-        }
-
-        // 已注册但 Redis 未就绪/未绑定：平台尚未创建实例，此时上报会被拒绝
-        //    每轮都再尝试一次二次注册，Redis 恢复后无需等到下一个 5 分钟采集周期
-        if (!registerService.isBound()) {
-            registerService.registerIfNeeded();
-            if (!registerService.isBound()) {
-                logUnbound();
-                return;
-            }
         }
 
         // 重传之前上报失败、缓存在本地的数据
@@ -82,24 +69,13 @@ public class CollectServiceImpl implements CollectService {
             return;
         }
 
-        // 本轮采集（Redis 指标 + 身份/主从信息）
-        MetricDataDTO metric;
-        try {
-            metric = collector.collect();
-        } catch (Exception e) {
-            log.error("Redis 指标采集异常", e);
-            return;
-        }
-
-        if (!"up".equals(metric.getStatus())) {
-            // 采集失败时不上报空指标：平台端收到任何一条指标都会把实例置为正常
-            log.warn("Redis 采集失败，跳过本轮上报: {}", metric.getErrorMsg());
+        MetricDataDTO metric = collectMetric();
+        if (metric == null) {
             return;
         }
 
         // 采集执行器 ping 平台的 HTTP 往返延迟
-        metric.setPingLatency(platformClient.measurePingLatency(
-                properties.getPlatform().getUrl()));
+        metric.setPingLatency(platformClient.measurePingLatency(properties.getPlatform().getUrl()));
 
         // 采集 Sentinel 节点（与指标、ping 延迟一次上报；失败不影响 Redis 指标上报）
         List<SentinelNodeDTO> sentinels = collectSentinels();
@@ -116,7 +92,7 @@ public class CollectServiceImpl implements CollectService {
         // 一次请求上报 Redis 指标 + ping 平台延迟 + Sentinel 节点
         try {
             platformClient.reportMetric(
-                    MetricReportDTO.from(metric, token, "0", sentinels),
+                    MetricReportDTO.from(metric, token, CollectConstant.COLLECT_TYPE_AUTO, sentinels),
                     properties.getPlatform().getUrl(),
                     token);
             localMetricStore.remove(metric);
@@ -126,22 +102,17 @@ public class CollectServiceImpl implements CollectService {
                     metric.getLatency(), metric.getReplDelay(), metric.getPingLatency(),
                     sentinels.size());
         } catch (BusinessException e) {
-            if (isAuthenticationError(e.getMessage())) {
-                // token 失效或平台侧实例绑定丢失：清除本地凭证，注册任务会重新注册/绑定
-                registerService.invalidateToken();
-            }
-            log.error("本轮数据上报失败，已本地留存，待下轮重传（当前待重传 {} 条）: {}",
-                    localMetricStore.pendingCount(), e.getMessage());
+            invalidateCredentialIfNecessary(e);
+            logReportFailure(e);
         } catch (Exception e) {
-            log.error("本轮数据上报失败，已本地留存，待下轮重传（当前待重传 {} 条）: {}",
-                    localMetricStore.pendingCount(), e.getMessage());
+            logReportFailure(e);
         }
     }
 
     @Override
     public MetricReportDTO collectForManualCheck() {
         MetricDataDTO metric = collector.collect();
-        if (!"up".equals(metric.getStatus())) {
+        if (!CollectConstant.STATUS_UP.equals(metric.getStatus())) {
             String error = StringUtils.hasText(metric.getErrorMsg())
                     ? metric.getErrorMsg() : "Redis 采集失败";
             throw new BusinessException(BusinessCode.OPERATION_ERROR.getCode(), error);
@@ -154,7 +125,48 @@ public class CollectServiceImpl implements CollectService {
                 metric.getRole(), metric.getOps(), metric.getLatency(),
                 metric.getReplDelay(), metric.getPingLatency(), sentinels.size());
         // 手动采集由平台回填 token 并写库，执行器不重复上报
-        return MetricReportDTO.from(metric, null, "1", sentinels);
+        return MetricReportDTO.from(metric, null, CollectConstant.COLLECT_TYPE_MANUAL, sentinels);
+    }
+
+    /**
+     * 确保已注册且已绑定实例；未就绪时按 60s 节流提示并跳过本轮
+     */
+    private boolean ensureRegistered() {
+        // 未注册时先尝试注册；注册失败则跳过本轮，避免无效采集与堆积
+        if (!registerService.hasToken() && !registerService.registerIfNeeded()) {
+            logUnregistered();
+            return false;
+        }
+
+        // 已注册但 Redis 未就绪/未绑定：平台尚未创建实例，此时上报会被拒绝
+        // 每轮都再尝试一次二次注册，Redis 恢复后无需等到下一个 5 分钟采集周期
+        if (!registerService.isBound()) {
+            registerService.registerIfNeeded();
+            if (!registerService.isBound()) {
+                logUnbound();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 执行一次 Redis 采集；失败返回 null（不产生空指标，避免平台误判实例正常）
+     */
+    private MetricDataDTO collectMetric() {
+        MetricDataDTO metric;
+        try {
+            metric = collector.collect();
+        } catch (Exception e) {
+            log.error("Redis 指标采集异常", e);
+            return null;
+        }
+        if (!CollectConstant.STATUS_UP.equals(metric.getStatus())) {
+            // 采集失败时不上报空指标：平台端收到任何一条指标都会把实例置为正常
+            log.warn("Redis 采集失败，跳过本轮上报: {}", metric.getErrorMsg());
+            return null;
+        }
+        return metric;
     }
 
     private List<SentinelNodeDTO> collectSentinels() {
@@ -166,6 +178,18 @@ public class CollectServiceImpl implements CollectService {
                     e.getMessage());
             return Collections.emptyList();
         }
+    }
+
+    /** token 失效 / 实例绑定丢失时清除本地凭证，由注册任务重新注册 */
+    private void invalidateCredentialIfNecessary(BusinessException e) {
+        if (AuthFailureClassifier.isCredentialOrBindingInvalid(e)) {
+            registerService.invalidateToken();
+        }
+    }
+
+    private void logReportFailure(Exception e) {
+        log.error("本轮数据上报失败，已本地留存，待下轮重传（当前待重传 {} 条）: {}",
+                localMetricStore.pendingCount(), e.getMessage());
     }
 
     /** 未注册时按 60s 节流提示 */
@@ -192,7 +216,7 @@ public class CollectServiceImpl implements CollectService {
      * 网络/平台异常时停止本轮重传，剩余数据继续保留
      */
     private void retryPending() {
-        List<MetricDataDTO> pending = localMetricStore.loadPending(MAX_RETRY_BATCH);
+        List<MetricDataDTO> pending = localMetricStore.loadPending(CollectConstant.MAX_RETRY_BATCH);
         if (pending.isEmpty()) {
             return;
         }
@@ -206,13 +230,13 @@ public class CollectServiceImpl implements CollectService {
             String token = registerService.getToken();
             try {
                 platformClient.reportMetric(
-                        MetricReportDTO.from(metric, token, "0", null),
+                        MetricReportDTO.from(metric, token, CollectConstant.COLLECT_TYPE_AUTO, null),
                         properties.getPlatform().getUrl(),
                         token);
                 localMetricStore.remove(metric);
                 log.info("历史数据重传成功: collectTime={}", metric.getCollectTime());
             } catch (BusinessException e) {
-                if (isAuthenticationError(e.getMessage())) {
+                if (AuthFailureClassifier.isCredentialOrBindingInvalid(e)) {
                     registerService.invalidateToken();
                 }
                 log.warn("历史数据重传中断，剩余 {} 条继续保留: {}",
@@ -224,16 +248,5 @@ public class CollectServiceImpl implements CollectService {
                 return;
             }
         }
-    }
-
-    private boolean isAuthenticationError(String message) {
-        if (!StringUtils.hasText(message)) {
-            return false;
-        }
-        String lower = message.toLowerCase();
-        return lower.contains("token")
-                || message.contains("身份不匹配")
-                || message.contains("无效的注册码")
-                || message.contains("尚未完成 Redis 安装与实例绑定");
     }
 }
