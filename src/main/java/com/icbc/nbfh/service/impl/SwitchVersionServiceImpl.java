@@ -5,6 +5,7 @@ import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.config.AgentProperties;
+import com.icbc.nbfh.config.OperationPathResolver;
 import com.icbc.nbfh.entity.DTO.CommandResultDTO;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.service.SwitchVersionService;
@@ -23,6 +24,7 @@ public class SwitchVersionServiceImpl implements SwitchVersionService {
     private final FixedScriptExecutor fixedScriptExecutor;
 
     private final AgentProperties agentProperties;
+    private final OperationPathResolver operationPaths;
 
     /**
      * 切换current软链接，不负责Redis或Sentinel的启停。
@@ -34,8 +36,8 @@ public class SwitchVersionServiceImpl implements SwitchVersionService {
         // 从任务参数中读取已校验的目标版本号。
         String targetVersion = params.get(TaskParamConstants.TARGET_VERSION);
         // 从本地配置中获取Redis版本安装目录和current软链接路径。
-        String installDir = agentProperties.getOperation().getInstallDir();
-        String currentDir = agentProperties.getOperation().getCurrentDir();
+        String installDir = operationPaths.getInstallDirectory().toString();
+        String currentDir = operationPaths.getCurrentDirectory().toString();
 
         try {
             // 调用版本切换脚本。

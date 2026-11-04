@@ -1,0 +1,18 @@
+[Unit]
+Description=Managed Redis Sentinel
+After=network-online.target redis-managed.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=__CURRENT_DIR__/bin/redis-sentinel __SENTINEL_CONFIG_FILE__ --sentinel --daemonize no --supervised no
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=0 143
+TimeoutStopSec=30
+LimitNOFILE=10032
+
+[Install]
+WantedBy=multi-user.target

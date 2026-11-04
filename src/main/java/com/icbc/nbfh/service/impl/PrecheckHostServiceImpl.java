@@ -2,6 +2,7 @@ package com.icbc.nbfh.service.impl;
 
 import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.config.AgentProperties;
+import com.icbc.nbfh.config.OperationPathResolver;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.service.PrecheckHostService;
 import com.icbc.nbfh.util.FileValidationUtil;
@@ -22,6 +23,7 @@ import java.nio.file.Paths;
 public class PrecheckHostServiceImpl implements PrecheckHostService {
 
     private final AgentProperties agentProperties;
+    private final OperationPathResolver operationPaths;
 
     /**
      * 检查本机是否具备Redis部署所需的基础条件。
@@ -34,11 +36,14 @@ public class PrecheckHostServiceImpl implements PrecheckHostService {
 
         try {
             AgentProperties.OperationConfig operation = agentProperties.getOperation();
-            Path installed = Paths.get(operation.getInstallDir());
+            Path installed = operationPaths.getInstallDirectory();
             // 检查Redis数据目录。
             FileValidationUtil.checkDirectory(agentProperties.getRedis().getDataDir(), "Redis数据目录", true);
             // 检查current软链接是否合法。
-            checkCurrentLink(operation.getCurrentDir(), installed);
+            checkCurrentLink(
+                    operationPaths.getCurrentDirectory().toString(),
+                    installed
+            );
             // 获取版本部署开始前要求的最低可用空间。
             long minimumFreeSpace = operation.getMinFreeSpaceBytes();
             // 获取版本安装目录所在文件系统的可用空间。

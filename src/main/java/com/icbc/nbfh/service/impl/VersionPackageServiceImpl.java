@@ -5,7 +5,7 @@ import com.icbc.nbfh.common.exception.ParameterCode;
 import com.icbc.nbfh.common.constant.ValidationConstants;
 import com.icbc.nbfh.common.constant.VersionPackageConstants;
 import com.icbc.nbfh.common.exception.ParameterException;
-import com.icbc.nbfh.config.AgentProperties;
+import com.icbc.nbfh.config.OperationPathResolver;
 import com.icbc.nbfh.util.FileChecksumUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +17,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
 /** Redis源码包接收、摘要校验及暂存清理服务。 */
@@ -26,7 +25,7 @@ import java.nio.file.StandardOpenOption;
 @RequiredArgsConstructor
 public class VersionPackageServiceImpl implements VersionPackageService {
 
-    private final AgentProperties agentProperties;
+    private final OperationPathResolver operationPaths;
 
     /**
      * 流式保存源码包，摘要一致后返回正式暂存路径。
@@ -37,9 +36,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
 
         // ======== 1. 读取源码包目录 ========
         // 获取源码包存放目录。
-        String packageDir = agentProperties.getOperation().getPackageDir();
-        // 固定根目录已在执行器启动时完成校验。
-        Path packageDirectory = Paths.get(packageDir);
+        Path packageDirectory = operationPaths.getPackageDirectory();
 
         // ======== 2. 创建staging暂存目录 ========
         // 在安装包根目录下面拼接staging子目录。
@@ -136,8 +133,7 @@ public class VersionPackageServiceImpl implements VersionPackageService {
 
         try {
             // 清理只允许发生在配置的暂存目录下，不接受任意服务器路径。
-            Path stagingDirectory = Paths.get(
-                    agentProperties.getOperation().getPackageDir())
+            Path stagingDirectory = operationPaths.getPackageDirectory()
                     .resolve(VersionPackageConstants.STAGING_DIRECTORY_NAME);
             if (requestDirectory == null) {
                 throw new IOException("缺少源码包暂存目录");

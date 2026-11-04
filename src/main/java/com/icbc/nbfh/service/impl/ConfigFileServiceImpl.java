@@ -4,7 +4,7 @@ import com.icbc.nbfh.common.exception.ParameterCode;
 import com.icbc.nbfh.common.constant.ConfigFileConstants;
 import com.icbc.nbfh.common.constant.ValidationConstants;
 import com.icbc.nbfh.common.exception.ParameterException;
-import com.icbc.nbfh.config.AgentProperties;
+import com.icbc.nbfh.config.OperationPathResolver;
 import com.icbc.nbfh.service.ConfigFileService;
 import com.icbc.nbfh.util.FileChecksumUtil;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +17,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -30,7 +29,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 @RequiredArgsConstructor
 public class ConfigFileServiceImpl implements ConfigFileService {
 
-    private final AgentProperties agentProperties;
+    private final OperationPathResolver operationPaths;
 
     /**
      * 保存并校验平台上传的两份配置文件。
@@ -45,9 +44,9 @@ public class ConfigFileServiceImpl implements ConfigFileService {
             MultipartFile sentinelFile) throws IOException {
 
         // 直接读取application.yml中的暂存根目录。
-        Path staging = Paths.get(
-                agentProperties.getOperation().getConfigFileDir(),
-                ConfigFileConstants.STAGING_DIRECTORY_NAME);
+        Path staging = operationPaths.getConfigFileDirectory().resolve(
+                ConfigFileConstants.STAGING_DIRECTORY_NAME
+        );
 
         // 如果staging不存在，就创建。
         Files.createDirectories(staging);
@@ -167,9 +166,9 @@ public class ConfigFileServiceImpl implements ConfigFileService {
         }
         // ======== 1. 限制清理范围 ========
         // 暂存根目录来自application.yml。
-        Path staging = Paths.get(
-                agentProperties.getOperation().getConfigFileDir(),
-                ConfigFileConstants.STAGING_DIRECTORY_NAME);
+        Path staging = operationPaths.getConfigFileDirectory().resolve(
+                ConfigFileConstants.STAGING_DIRECTORY_NAME
+        );
 
         // 只允许清理staging下的直接子目录。
         if (!staging.equals(requestDirectory.getParent())) {

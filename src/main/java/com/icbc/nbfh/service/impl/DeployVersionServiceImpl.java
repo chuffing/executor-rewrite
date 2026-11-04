@@ -5,6 +5,7 @@ import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.config.AgentProperties;
+import com.icbc.nbfh.config.OperationPathResolver;
 import com.icbc.nbfh.entity.DTO.CommandResultDTO;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.service.DeployVersionService;
@@ -28,6 +29,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
     private final FixedScriptExecutor fixedScriptExecutor;
 
     private final AgentProperties agentProperties;
+    private final OperationPathResolver operationPaths;
 
     private final VersionPackageService versionPackageService;
 
@@ -50,7 +52,7 @@ public class DeployVersionServiceImpl implements DeployVersionService {
             // 获取平台提供的SHA256。后续与存入执行器本地源码包的SHA256比较。
             String expectedSha256 = params.get(TaskParamConstants.PACKAGE_SHA256);
             // 获取Redis各版本的正式安装目录。
-            String installDir = agentProperties.getOperation().getInstallDir();
+            String installDir = operationPaths.getInstallDirectory().toString();
             Path installDirectory = Paths.get(installDir);
 
             // ======== 2. 检查源码包文件 ========

@@ -7,6 +7,8 @@ fail() {
     exit 1
 }
 
+# 读取配置中最后一个生效的简单路径指令。
+# 平台生成的路径不包含空白；拒绝复杂写法，避免脚本错误解析后创建意外目录。
 read_config_path() {
     local directive="$1"
     local file="$2"
@@ -21,6 +23,7 @@ read_config_path() {
     ' "$file"
 }
 
+# 在受控根目录下幂等创建运行目录，禁止配置指向任意系统路径。
 ensure_controlled_directory() {
     local purpose="$1"
     local requested_path="$2"
@@ -45,50 +48,47 @@ ensure_controlled_directory() {
         || fail "${purpose}不可写：$normalized_path"
 }
 
+# 日志输出为空字符串时表示写标准输出；配置文件路径则确保其父目录存在。
 ensure_log_directory() {
     local logfile="$1"
     local log_root="$2"
     [[ -n "$logfile" ]] || return 0
-    ensure_controlled_directory "Sentinel日志目录" "$(dirname -- "$logfile")" "$log_root"
+    ensure_controlled_directory "Redis日志目录" "$(dirname -- "$logfile")" "$log_root"
 }
 
+# PID目录属于系统运行目录，只检查，不由业务脚本创建。
 validate_pid_directory() {
     local pidfile="$1"
     [[ -n "$pidfile" ]] || return 0
-    [[ "$pidfile" == /* ]] || fail "Sentinel pidfile必须使用绝对路径：$pidfile"
+    [[ "$pidfile" == /* ]] || fail "Redis pidfile必须使用绝对路径：$pidfile"
     local pid_directory
     pid_directory="$(dirname -- "$pidfile")"
     [[ -d "$pid_directory" && -w "$pid_directory" && -x "$pid_directory" ]] \
-        || fail "Sentinel PID目录不存在或不可写：$pid_directory"
+        || fail "Redis PID目录不存在或不可写：$pid_directory"
 }
 
 # current路径由Java传入，来自执行器已有的currentDir配置。
 if [[ $# -ne 1 ]]; then
-    echo "Sentinel启动脚本需要一个current软链接路径参数" >&2
+    echo "Redis启动脚本需要一个current软链接路径参数" >&2
     exit 1
 fi
 # 固定配置路径已经由启动校验确认，这里只检查运行时文件状态。
-config_file="${SENTINEL_CONFIG_FILE}"
+config_file="${REDIS_CONFIG_FILE}"
 if [[ ! -f "$config_file" || ! -r "$config_file" ]]; then
-    echo "Sentinel配置文件不存在或不可读" >&2
-    exit 1
-fi
-# Sentinel运行时会重写配置，配置文件必须可写。
-if [[ ! -w "$config_file" ]]; then
-    echo "Sentinel配置文件不可写" >&2
+    echo "Redis配置文件不存在或不可读" >&2
     exit 1
 fi
 
-# Sentinel同样会切换到dir目录，并可能写日志和PID文件。
-sentinel_data_dir="$(read_config_path dir "$config_file")"
-sentinel_logfile="$(read_config_path logfile "$config_file")"
-sentinel_pidfile="$(read_config_path pidfile "$config_file")"
+# Redis会在启动时切换到dir目录；运行目录不存在会直接启动失败。
+redis_data_dir="$(read_config_path dir "$config_file")"
+redis_logfile="$(read_config_path logfile "$config_file")"
+redis_pidfile="$(read_config_path pidfile "$config_file")"
 ensure_controlled_directory \
-    "Sentinel运行目录" \
-    "$sentinel_data_dir" \
-    "${SENTINEL_DATA_ROOT:-/opt/redis/data}"
-ensure_log_directory "$sentinel_logfile" "${SENTINEL_LOG_ROOT:-/opt/redis/logs}"
-validate_pid_directory "$sentinel_pidfile"
+    "Redis运行目录" \
+    "$redis_data_dir" \
+    "${REDIS_DATA_ROOT:-/opt/redis/data}"
+ensure_log_directory "$redis_logfile" "${REDIS_LOG_ROOT:-/opt/redis/logs}"
+validate_pid_directory "$redis_pidfile"
 
 # 校验current软链接，解析本次启动使用的版本目录。
 current_dir="$1"
@@ -106,35 +106,52 @@ if [[ ! -d "$version_dir" ]]; then
 fi
 
 # 从current指向的版本中获取启动程序，不再查找旧程序或PATH。
-server_bin="$version_dir/bin/redis-sentinel"
+server_bin="$version_dir/bin/redis-server"
 cli_bin="$version_dir/bin/redis-cli"
+redis_unit="redis-managed.service"
 if [[ ! -f "$server_bin" ]]; then
-    echo "Sentinel启动程序不存在或不是普通文件：$server_bin" >&2
+    echo "Redis启动程序不存在或不是普通文件：$server_bin" >&2
     exit 1
 fi
 if [[ ! -x "$server_bin" ]]; then
-    echo "Sentinel启动程序没有执行权限：$server_bin" >&2
+    echo "Redis启动程序没有执行权限：$server_bin" >&2
     exit 1
 fi
 if [[ ! -f "$cli_bin" || ! -x "$cli_bin" ]]; then
     echo "Redis客户端程序不存在或不可执行：$cli_bin" >&2
     exit 1
 fi
-
-# Sentinel已经正常运行时不再启动第二个进程，重复任务直接成功。
-host="${SENTINEL_HOST:-127.0.0.1}"
-port="${SENTINEL_PORT:-26379}"
-: "${SENTINEL_PASSWORD:?请配置SENTINEL_PASSWORD}"
-export REDISCLI_AUTH="${SENTINEL_PASSWORD}"
-if server_info="$("$cli_bin" --raw -h "$host" -p "$port" INFO server 2>/dev/null)"; then
-    server_info="${server_info//$'\r'/}"
-    if grep -Eq '^redis_mode:sentinel$' <<< "$server_info"; then
-        echo "Sentinel已经处于运行状态"
-        exit 0
-    fi
-    echo "Sentinel端口运行的不是预期Sentinel服务" >&2
-    exit 1
+if ! command -v systemctl >/dev/null 2>&1; then
+    fail "未找到systemctl，无法管理Redis独立服务"
+fi
+if ! systemctl cat "$redis_unit" >/dev/null 2>&1; then
+    fail "Redis systemd服务不存在：$redis_unit"
 fi
 
-# 后台运行后返回，由Java检查实际启动状态；不修改配置文件内容。
-exec "$server_bin" "$config_file" --sentinel --daemonize yes --supervised no
+# Redis已经由独立systemd服务正常管理时，重复启动直接成功。
+host="${REDIS_HOST:-127.0.0.1}"
+port="${REDIS_PORT:-6379}"
+: "${REDIS_PASSWORD:?请配置REDIS_PASSWORD}"
+export REDISCLI_AUTH="${REDIS_PASSWORD}"
+if server_info="$("$cli_bin" --raw -h "$host" -p "$port" INFO server 2>/dev/null)"; then
+    server_info="${server_info//$'\r'/}"
+    if grep -Eq '^redis_mode:(standalone|cluster)$' <<< "$server_info"; then
+        if systemctl is-active --quiet "$redis_unit"; then
+            echo "Redis systemd服务已经处于运行状态"
+            exit 0
+        fi
+        fail "Redis已经运行但不属于${redis_unit}，拒绝重复启动"
+    fi
+    echo "Redis端口运行的不是预期Redis服务" >&2
+    exit 1
+fi
+if systemctl is-active --quiet "$redis_unit"; then
+    fail "${redis_unit}处于active状态，但无法连接Redis"
+fi
+
+# Redis由独立systemd单元启动，避免执行器停止时连带终止Redis。
+systemctl enable "$redis_unit" || fail "启用Redis systemd服务失败：$redis_unit"
+systemctl start "$redis_unit" || fail "启动Redis systemd服务失败：$redis_unit"
+systemctl is-active --quiet "$redis_unit" \
+    || fail "Redis systemd服务启动后未进入active状态：$redis_unit"
+echo "Redis systemd服务已启动"

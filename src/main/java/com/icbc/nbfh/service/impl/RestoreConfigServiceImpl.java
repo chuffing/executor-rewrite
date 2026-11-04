@@ -5,7 +5,7 @@ import com.icbc.nbfh.service.RestoreConfigService;
 import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.common.constant.ValidationConstants;
-import com.icbc.nbfh.config.AgentProperties;
+import com.icbc.nbfh.config.OperationPathResolver;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.util.FileChecksumUtil;
 import com.icbc.nbfh.util.FileValidationUtil;
@@ -16,7 +16,6 @@ import org.springframework.util.StringUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Map;
 
@@ -24,7 +23,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class RestoreConfigServiceImpl implements RestoreConfigService {
 
-    private final AgentProperties agentProperties;
+    private final OperationPathResolver operationPaths;
 
     /**
      * 使用执行器本地备份恢复Redis和Sentinel配置。
@@ -52,14 +51,10 @@ public class RestoreConfigServiceImpl implements RestoreConfigService {
         }
 
         // 读取本地配置文件路径。
-        String redisBackupFile = agentProperties.getRedis().getBackupFile();
-        String redisConfigFile = agentProperties.getRedis().getConfigFile();
-        String sentinelBackupFile = agentProperties.getSentinel().getBackupFile();
-        String sentinelConfigFile = agentProperties.getSentinel().getConfigFile();
-        Path redisBackupPath = Paths.get(redisBackupFile);
-        Path redisConfigPath = Paths.get(redisConfigFile);
-        Path sentinelBackupPath = Paths.get(sentinelBackupFile);
-        Path sentinelConfigPath = Paths.get(sentinelConfigFile);
+        Path redisBackupPath = operationPaths.getRedisBackupFile();
+        Path redisConfigPath = operationPaths.getRedisConfigFile();
+        Path sentinelBackupPath = operationPaths.getSentinelBackupFile();
+        Path sentinelConfigPath = operationPaths.getSentinelConfigFile();
 
         // 检查两份备份文件是否存在并且可读。
         if (!FileValidationUtil.isReadableFile(redisBackupPath)

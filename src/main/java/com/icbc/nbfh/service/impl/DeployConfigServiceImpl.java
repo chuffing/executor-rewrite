@@ -3,7 +3,7 @@ package com.icbc.nbfh.service.impl;
 import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.constant.TaskParamConstants;
 import com.icbc.nbfh.common.constant.ValidationConstants;
-import com.icbc.nbfh.config.AgentProperties;
+import com.icbc.nbfh.config.OperationPathResolver;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.service.DeployConfigService;
 import com.icbc.nbfh.service.ConfigFileService;
@@ -37,7 +37,7 @@ public class DeployConfigServiceImpl implements DeployConfigService {
 
     private static final String TEMP_FILE_SUFFIX = ".tmp";
 
-    private final AgentProperties agentProperties;
+    private final OperationPathResolver operationPaths;
 
     private final ConfigFileService configFileService;
 
@@ -64,11 +64,11 @@ public class DeployConfigServiceImpl implements DeployConfigService {
             requestDirectory = redisStaged.getParent();
 
             // 获取正式配置路径。
-            Path redisTarget = Paths.get(agentProperties.getRedis().getConfigFile());
-            Path sentinelTarget = Paths.get(agentProperties.getSentinel().getConfigFile());
+            Path redisTarget = operationPaths.getRedisConfigFile();
+            Path sentinelTarget = operationPaths.getSentinelConfigFile();
             // 获取备份配置路径。
-            Path redisBackup = Paths.get(agentProperties.getRedis().getBackupFile());
-            Path sentinelBackup = Paths.get(agentProperties.getSentinel().getBackupFile());
+            Path redisBackup = operationPaths.getRedisBackupFile();
+            Path sentinelBackup = operationPaths.getSentinelBackupFile();
 
             // 获取平台传入的SHA256。
             String redisSha256 = params.get(TaskParamConstants.REDIS_CONFIG_SHA256);

@@ -5,6 +5,7 @@ import com.icbc.nbfh.service.StartRedisService;
 import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.config.AgentProperties;
+import com.icbc.nbfh.config.OperationPathResolver;
 import com.icbc.nbfh.entity.DTO.CommandResultDTO;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.command.FixedScriptExecutor;
@@ -23,6 +24,7 @@ public class StartRedisServiceImpl implements StartRedisService {
     private final FixedScriptExecutor fixedScriptExecutor;
 
     private final AgentProperties agentProperties;
+    private final OperationPathResolver operationPaths;
 
     /**
      * 执行Redis启动操作并检查运行状态。
@@ -48,7 +50,7 @@ public class StartRedisServiceImpl implements StartRedisService {
             commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.START_REDIS,
                     agentProperties.getOperation().getScriptTimeoutSeconds(),
-                    agentProperties.getOperation().getCurrentDir()
+                    operationPaths.getCurrentDirectory().toString()
             );
 
         } catch (FileNotFoundException e) {

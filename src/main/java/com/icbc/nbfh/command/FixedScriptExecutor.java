@@ -2,6 +2,7 @@ package com.icbc.nbfh.command;
 
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.config.AgentProperties;
+import com.icbc.nbfh.config.OperationPathResolver;
 import com.icbc.nbfh.entity.DTO.CommandResultDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -15,7 +16,6 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +34,7 @@ import java.util.concurrent.TimeoutException;
 public class FixedScriptExecutor {
 
     private final AgentProperties agentProperties;
+    private final OperationPathResolver operationPaths;
 
     // 进程正常终止的等待时间：1秒
     private static final long PROCESS_STOP_TIMEOUT_SECONDS = 1;
@@ -58,18 +59,18 @@ public class FixedScriptExecutor {
 
         // 1. 根据脚本目录和脚本类型获取脚本文件
         File scriptFile = new File(
-                agentProperties.getOperation().getScriptDir(),
+                operationPaths.getScriptDirectory().toFile(),
                 scriptType.getFileName()
         );
 
         // 停止操作真正使用redis-cli前，检查首次部署后才会出现的动态文件状态。
         if (scriptType == ScriptType.STOP_REDIS
                 || scriptType == ScriptType.STOP_SENTINEL) {
-            Path redisCli = Paths.get(agentProperties.getRedis().getCliBin());
+            Path redisCli = operationPaths.getRedisCli();
             if (!Files.isRegularFile(redisCli)
                     || !Files.isExecutable(redisCli)) {
                 throw new IOException(
-                        "agent.redis.cli-bin不存在、不是普通文件或不可执行："
+                        "Redis CLI不存在、不是普通文件或不可执行："
                                 + redisCli
                 );
             }
@@ -201,10 +202,16 @@ public class FixedScriptExecutor {
         environment.put("REDIS_HOST", redis.getHost());
         environment.put("REDIS_PORT", String.valueOf(redis.getPort()));
         environment.put("REDIS_PASSWORD", redis.getPassword());
-        environment.put("REDIS_CONFIG_FILE", redis.getConfigFile());
+        environment.put(
+                "REDIS_CONFIG_FILE",
+                operationPaths.getRedisConfigFile().toString()
+        );
         environment.put("REDIS_DATA_ROOT", redis.getDataDir());
         environment.put("REDIS_LOG_ROOT", redis.getLogDir());
-        environment.put("REDIS_CLI_BIN", redis.getCliBin());
+        environment.put(
+                "REDIS_CLI_BIN",
+                operationPaths.getRedisCli().toString()
+        );
     }
 
 
@@ -222,13 +229,13 @@ public class FixedScriptExecutor {
         environment.put("SENTINEL_PASSWORD", sentinel.getPassword());
         environment.put(
                 "SENTINEL_CONFIG_FILE",
-                sentinel.getConfigFile()
+                operationPaths.getSentinelConfigFile().toString()
         );
         environment.put("SENTINEL_DATA_ROOT", sentinel.getDataDir());
         environment.put("SENTINEL_LOG_ROOT", sentinel.getLogDir());
         environment.put(
                 "REDIS_CLI_BIN",
-                agentProperties.getRedis().getCliBin()
+                operationPaths.getRedisCli().toString()
         );
     }
 

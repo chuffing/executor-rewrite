@@ -5,6 +5,7 @@ import com.icbc.nbfh.service.StartSentinelService;
 import com.icbc.nbfh.common.exception.BusinessCode;
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.config.AgentProperties;
+import com.icbc.nbfh.config.OperationPathResolver;
 import com.icbc.nbfh.entity.DTO.CommandResultDTO;
 import com.icbc.nbfh.entity.DTO.OperationResultDTO;
 import com.icbc.nbfh.command.FixedScriptExecutor;
@@ -23,6 +24,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
     private final FixedScriptExecutor fixedScriptExecutor;
 
     private final AgentProperties agentProperties;
+    private final OperationPathResolver operationPaths;
 
     /**
      * 执行Sentinel启动操作并检查运行状态。
@@ -58,7 +60,7 @@ public class StartSentinelServiceImpl implements StartSentinelService {
             commandResult = fixedScriptExecutor.executeScript(
                     ScriptType.START_SENTINEL,
                     agentProperties.getOperation().getScriptTimeoutSeconds(),
-                    agentProperties.getOperation().getCurrentDir()
+                    operationPaths.getCurrentDirectory().toString()
             );
 
         } catch (FileNotFoundException e) {

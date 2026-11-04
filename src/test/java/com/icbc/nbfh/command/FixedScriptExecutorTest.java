@@ -2,6 +2,7 @@ package com.icbc.nbfh.command;
 
 import com.icbc.nbfh.common.Enum.ScriptType;
 import com.icbc.nbfh.config.AgentProperties;
+import com.icbc.nbfh.config.OperationPathResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -21,30 +22,32 @@ class FixedScriptExecutorTest {
     Path temporaryDirectory;
 
     private AgentProperties properties;
+    private OperationPathResolver operationPaths;
     private FixedScriptExecutor executor;
 
     @BeforeEach
     void setUp() {
         properties = new AgentProperties();
+        properties.getOperation().setBaseDir(
+                temporaryDirectory.resolve("redis-root").toString()
+        );
+        operationPaths = new OperationPathResolver(properties);
 
         AgentProperties.RedisConfig redis = properties.getRedis();
         redis.setHost("127.0.0.1");
         redis.setPort(6379);
         redis.setPassword("redis-secret");
-        redis.setConfigFile("/opt/redis/conf/redis.conf");
         redis.setDataDir("/opt/redis/data");
         redis.setLogDir("/opt/redis/logs");
-        redis.setCliBin("/opt/redis/current/bin/redis-cli");
 
         AgentProperties.SentinelConfig sentinel = properties.getSentinel();
         sentinel.setHost("127.0.0.2");
         sentinel.setPort(26379);
         sentinel.setPassword("sentinel-secret");
-        sentinel.setConfigFile("/opt/redis/conf/sentinel.conf");
         sentinel.setDataDir("/opt/redis/data");
         sentinel.setLogDir("/opt/redis/logs");
 
-        executor = new FixedScriptExecutor(properties);
+        executor = new FixedScriptExecutor(properties, operationPaths);
     }
 
     @Test
@@ -60,13 +63,13 @@ class FixedScriptExecutorTest {
         assertEquals("127.0.0.1", environment.get("REDIS_HOST"));
         assertEquals("6379", environment.get("REDIS_PORT"));
         assertEquals("redis-secret", environment.get("REDIS_PASSWORD"));
-        assertEquals("/opt/redis/conf/redis.conf",
+        assertEquals(operationPaths.getRedisConfigFile().toString(),
                 environment.get("REDIS_CONFIG_FILE"));
         assertEquals("/opt/redis/data",
                 environment.get("REDIS_DATA_ROOT"));
         assertEquals("/opt/redis/logs",
                 environment.get("REDIS_LOG_ROOT"));
-        assertEquals("/opt/redis/current/bin/redis-cli",
+        assertEquals(operationPaths.getRedisCli().toString(),
                 environment.get("REDIS_CLI_BIN"));
     }
 
@@ -84,22 +87,18 @@ class FixedScriptExecutorTest {
         assertEquals("26379", environment.get("SENTINEL_PORT"));
         assertEquals("sentinel-secret",
                 environment.get("SENTINEL_PASSWORD"));
-        assertEquals("/opt/redis/conf/sentinel.conf",
+        assertEquals(operationPaths.getSentinelConfigFile().toString(),
                 environment.get("SENTINEL_CONFIG_FILE"));
         assertEquals("/opt/redis/data",
                 environment.get("SENTINEL_DATA_ROOT"));
         assertEquals("/opt/redis/logs",
                 environment.get("SENTINEL_LOG_ROOT"));
-        assertEquals("/opt/redis/current/bin/redis-cli",
+        assertEquals(operationPaths.getRedisCli().toString(),
                 environment.get("REDIS_CLI_BIN"));
     }
 
     @Test
     void shouldRejectMissingRedisCliWhenStopOperationActuallyRuns() {
-        properties.getRedis().setCliBin(
-                temporaryDirectory.resolve("redis-cli").toString()
-        );
-
         IOException exception = assertThrows(
                 IOException.class,
                 () -> executor.executeScript(
@@ -109,7 +108,7 @@ class FixedScriptExecutorTest {
         );
 
         assertTrue(exception.getMessage().contains(
-                "agent.redis.cli-bin不存在、不是普通文件或不可执行"
+                "Redis CLI不存在、不是普通文件或不可执行"
         ));
     }
 }

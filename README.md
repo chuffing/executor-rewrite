@@ -21,7 +21,7 @@
 
 - JDK 8；
 - Maven 3.6 或更高版本（仅构建机器需要）；
-- `bash`、`tar`、`gzip`；
+- `bash`、`tar`、`gzip`、`systemctl`；
 - `gcc`、`make` 等 Redis 源码编译工具；
 - 至少 2 GiB 可用磁盘空间，或满足配置中的更高要求；
 - 执行器能够访问平台端口，默认 `8100`；
@@ -35,6 +35,7 @@ bash --version
 gcc --version
 make --version
 tar --version
+systemctl --version
 ```
 
 Java 输出中应包含 Java 8。
@@ -62,79 +63,56 @@ mvn test
 
 ## 3. 确定运行账户
 
-执行器调用脚本启停 Redis 和 Sentinel，因此运行账户必须有权：
+执行器调用脚本，通过独立的 systemd 单元启停 Redis 和 Sentinel，因此运行账户必须有权：
 
 - 读取六个固定脚本；
 - 写入 `/opt/redis` 下的运维目录；
 - 读写正式配置和备份配置；
 - 执行 Redis 版本目录中的二进制文件；
-- 写入 Redis/Sentinel 的数据、日志和 PID 文件目录。
+- 写入 Redis/Sentinel 的数据、日志和 PID 文件目录；
+- 执行 `systemctl enable/start/stop` 管理两个固定服务单元。
 
-如果现有生产 Redis 已经由专用账户运行，优先让执行器使用同一个账户。本文示例账户为 `redisops`。若账户已存在，跳过：
+当前脚本直接调用 `systemctl`，本文统一让执行器以 `root` 运行。不要另外给普通账户配置宽泛的免密 `sudo`。Redis 和 Sentinel 由各自独立的 systemd 单元运行，与执行器不在同一个进程组；停止或更新执行器不会连带停止 Redis/Sentinel。
 
-```bash
-sudo useradd --system --home-dir /opt/redis --shell /sbin/nologin redisops
-```
+不要在没有核对现有 Redis 权限的情况下，递归修改现有生产数据目录的属主。
 
-不要在没有核对现有 Redis 权限的情况下，直接递归修改系统目录或现有生产数据目录的属主。
+## 4. 创建执行器基础目录
 
-## 4. 一次性创建全部目录
-
-以下命令复制执行一次，不需要人工逐个创建：
+人工只需要准备 JAR 所在的基础目录：
 
 ```bash
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/agent
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/agent/data
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/agent/logs
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/agent/task-results
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/scripts
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/packages
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/configfiles
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/versions
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/conf
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/backup
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/data
-sudo install -d -o redisops -g redisops -m 0750 /opt/redis/logs
+sudo install -d -o root -g root -m 0750 /opt/redis
+sudo install -d -o root -g root -m 0750 /opt/redis/agent
 ```
 
-执行器启动时会严格校验：
+`agent.operation.base-dir` 校验通过后，执行器会从该绝对根目录派生全部固定运维路径并自动：
 
-- `scripts` 必须存在且可访问；
-- `packages`、`configfiles`、`versions` 必须存在且可读、可写、可访问；
-- `current` 的父目录必须存在且可写；
-- 正式配置和备份配置的父目录必须存在且可写；
-- Redis 正式配置与备份不能位于同一目录；
-- Sentinel 正式配置与备份不能位于同一目录。
+- 创建 `scripts`、`packages`、`configfiles` 和 `versions`；
+- 创建 `current`、正式配置及备份配置所需的父目录；
+- 从 JAR 内释放六个固定脚本，并在升级 JAR 后同步更新；
+- 自动安装两个固定的 Redis/Sentinel systemd 服务单元；
+- 检查上述目录可读、可写、可访问；
+- 使用 `conf` 保存正式配置，使用 `backup` 保存可信备份。
 
-## 5. 上传 JAR 和六个脚本
+执行器不会创建假的 `current` 目录，也不会创建空的 Redis/Sentinel
+正式配置文件。已有 Redis 的服务器仍需按照第 7 节准备配置和软链接。
+
+## 5. 上传并安装 JAR
 
 从构建机器上传，下面的 `redis-server` 替换为目标服务器地址：
 
 ```bash
 scp target/redis-monitor-agent.jar redis-server:/tmp/
-scp scripts/deploy-version.sh redis-server:/tmp/
-scp scripts/switch-version.sh redis-server:/tmp/
-scp scripts/start-redis.sh redis-server:/tmp/
-scp scripts/stop-redis.sh redis-server:/tmp/
-scp scripts/start-sentinel.sh redis-server:/tmp/
-scp scripts/stop-sentinel.sh redis-server:/tmp/
 ```
 
 在目标服务器安装：
 
 ```bash
-sudo install -o redisops -g redisops -m 0640 /tmp/redis-monitor-agent.jar /opt/redis/agent/redis-monitor-agent.jar
-
-sudo install -o redisops -g redisops -m 0750 /tmp/deploy-version.sh /opt/redis/scripts/deploy-version.sh
-sudo install -o redisops -g redisops -m 0750 /tmp/switch-version.sh /opt/redis/scripts/switch-version.sh
-sudo install -o redisops -g redisops -m 0750 /tmp/start-redis.sh /opt/redis/scripts/start-redis.sh
-sudo install -o redisops -g redisops -m 0750 /tmp/stop-redis.sh /opt/redis/scripts/stop-redis.sh
-sudo install -o redisops -g redisops -m 0750 /tmp/start-sentinel.sh /opt/redis/scripts/start-sentinel.sh
-sudo install -o redisops -g redisops -m 0750 /tmp/stop-sentinel.sh /opt/redis/scripts/stop-sentinel.sh
+sudo install -o root -g root -m 0640 /tmp/redis-monitor-agent.jar /opt/redis/agent/redis-monitor-agent.jar
 ```
 
-当前只有以下六个脚本，不存在 `precheck-host.sh`：
+六个脚本和两个 systemd 服务单元已经打包在 JAR 中，不需要单独上传。
+执行器首次启动时会释放以下脚本，不存在 `precheck-host.sh`：
 
 ```text
 deploy-version.sh
@@ -145,114 +123,29 @@ start-sentinel.sh
 stop-sentinel.sh
 ```
 
-如果脚本从 Windows 机器传来，先移除 CRLF：
+## 6. 使用 JAR 内置配置
 
-```bash
-sudo sed -i 's/\r$//' /opt/redis/scripts/*.sh
-sudo chmod 750 /opt/redis/scripts/*.sh
-```
+执行器统一读取 JAR 中的 `application.yml`，服务器上不再创建或维护外置
+YAML。发布 JAR 前应确认项目内配置已经与目标环境一致，包括平台地址、
+注册码、Redis/Sentinel 连接信息、服务名称及运维根目录规划。
 
-检查：
+`agent.host-ip` 保持为空时，执行器会在每台服务器上自动识别本机 IPv4；
+平台以 `hostIp + executorPort` 区分执行器。Token 文件保存在各自服务器的
+工作目录中，禁止在服务器之间复制 `agent-token.dat`。
 
-```bash
-ls -l /opt/redis/scripts
-file /opt/redis/scripts/*.sh
-```
-
-## 6. 创建外置 application.yml
-
-```bash
-sudo touch /opt/redis/agent/application.yml
-sudo chown redisops:redisops /opt/redis/agent/application.yml
-sudo chmod 600 /opt/redis/agent/application.yml
-sudo vi /opt/redis/agent/application.yml
-```
-
-写入以下内容，并替换所有尖括号占位符：
+固定运维路径只配置一次：
 
 ```yaml
-server:
-  port: 9101
-  address: 0.0.0.0
-
-spring:
-  application:
-    name: redis-monitor-agent
-
 agent:
-  platform:
-    url: http://<平台IP>:8100
-    register-code: <与平台完全一致的注册码>
-    token-file: /opt/redis/agent/agent-token.dat
-
-  agent-name: <能够区分本机的名称>
-  host-ip: <本机供平台访问的IPv4>
-
-  data-dir: /opt/redis/agent/data
-  data-retain-days: 7
-  log-dir: /opt/redis/agent/logs
-
-  task-result:
-    directory: /opt/redis/agent/task-results
-
-  redis:
-    host: 127.0.0.1
-    port: 6379
-    password: <Redis密码>
-    db: 0
-    timeout: 2000
-    config-file: /opt/redis/conf/redis.conf
-    data-dir: /opt/redis/data
-    log-dir: /opt/redis/logs
-    cli-bin: /opt/redis/current/bin/redis-cli
-    backup-file: /opt/redis/backup/redis.conf
-
-  sentinel:
-    enabled: true
-    host: 127.0.0.1
-    port: 26379
-    password: <Sentinel密码>
-    service-name: <Sentinel监控的主节点名称，例如mymaster>
-    nodes:
-      - <哨兵1的IP>:26379
-      - <哨兵2的IP>:26379
-      - <哨兵3的IP>:26379
-    timeout: 2000
-    config-file: /opt/redis/conf/sentinel.conf
-    data-dir: /opt/redis/data
-    log-dir: /opt/redis/logs
-    backup-file: /opt/redis/backup/sentinel.conf
-
   operation:
-    script-dir: /opt/redis/scripts
-    package-dir: /opt/redis/packages
-    config-file-dir: /opt/redis/configfiles
-    install-dir: /opt/redis/versions
-    current-dir: /opt/redis/current
-    min-free-space-bytes: 2147483648
-    script-timeout-seconds: 10
-    version-deploy-timeout-seconds: 1800
-    stop-check-timeout-seconds: 10
-    stop-check-interval-millis: 1000
-    start-check-timeout-seconds: 30
-    start-check-interval-millis: 1000
-    topology-check-timeout-seconds: 60
-    topology-check-interval-millis: 5000
-
-logging:
-  level:
-    com.icbc.nbfh: INFO
+    base-dir: /opt/redis
 ```
 
-注意：
+根目录必须是无空白、无冗余分隔符、无 `.` 或 `..` 路径段的绝对路径，且不能是文件系统根目录。`scripts`、`packages`、`configfiles`、`versions`、`current`、`conf`、`backup` 以及稳定的 `redis-cli` 路径都由代码派生，不再分别配置。
 
-- 当前代码要求 Redis 和 Sentinel 密码非空；
-- `host-ip` 必须是平台能够访问的本机 IP，不要误填 `127.0.0.1`；
-- 每台服务器使用自己的 Token 文件，禁止复制其他服务器的 `agent-token.dat`；
-- 所有运维路径必须是干净的绝对路径，不能带首尾空格、`.` 或 `..`；
-- `agent.redis.cli-bin` 必须是绝对路径，不能只写 `redis-cli`；
-- 正式配置目录 `/opt/redis/conf` 与备份目录 `/opt/redis/backup` 必须不同；
-- 配置文件含密码，权限保持为 `600`。
+`agent.redis.data-dir`、`agent.redis.log-dir` 及 Sentinel 对应配置仍保持独立，因为生产数据和日志可能位于其他磁盘。
+
+如果以后连执行器 JAR 也从 `/opt/redis/agent` 迁移到新的根目录，还必须人工同步修改 `redis-monitor-agent.service` 的 `WorkingDirectory` 和 `ExecStart`。这是执行器自身的操作系统启动入口，无法由尚未启动的 JAR 自动迁移；Redis/Sentinel的两个服务单元则会在执行器启动后自动按新根目录更新。
 
 ## 7. 场景一：首次纳管已有生产 Redis
 
@@ -265,7 +158,7 @@ logging:
 ```bash
 sudo cp <当前Redis配置文件> /opt/redis/conf/redis.conf
 sudo cp <当前Sentinel配置文件> /opt/redis/conf/sentinel.conf
-sudo chown redisops:redisops /opt/redis/conf/redis.conf /opt/redis/conf/sentinel.conf
+sudo chown root:root /opt/redis/conf/redis.conf /opt/redis/conf/sentinel.conf
 sudo chmod 640 /opt/redis/conf/redis.conf /opt/redis/conf/sentinel.conf
 ```
 
@@ -276,7 +169,7 @@ sudo chmod 640 /opt/redis/conf/redis.conf /opt/redis/conf/sentinel.conf
 ```bash
 sudo cp /opt/redis/conf/redis.conf /opt/redis/backup/redis.conf
 sudo cp /opt/redis/conf/sentinel.conf /opt/redis/backup/sentinel.conf
-sudo chown redisops:redisops /opt/redis/backup/redis.conf /opt/redis/backup/sentinel.conf
+sudo chown root:root /opt/redis/backup/redis.conf /opt/redis/backup/sentinel.conf
 sudo chmod 640 /opt/redis/backup/redis.conf /opt/redis/backup/sentinel.conf
 ```
 
@@ -295,27 +188,27 @@ bin/redis-cli
 
 ```bash
 sudo ln -sfn /usr/local/redis-7.2.4 /opt/redis/current
-sudo chown -h redisops:redisops /opt/redis/current
+sudo chown -h root:root /opt/redis/current
 ```
 
 验证：
 
 ```bash
 readlink -f /opt/redis/current
-sudo -u redisops test -x /opt/redis/current/bin/redis-server
-sudo -u redisops test -x /opt/redis/current/bin/redis-cli
-sudo -u redisops /opt/redis/current/bin/redis-cli --version
+sudo test -x /opt/redis/current/bin/redis-server
+sudo test -x /opt/redis/current/bin/redis-cli
+/opt/redis/current/bin/redis-cli --version
 ```
 
-`application.yml` 中始终保持：
+JAR 内置配置中始终保持：
 
 ```yaml
 agent:
-  redis:
-    cli-bin: /opt/redis/current/bin/redis-cli
+  operation:
+    base-dir: /opt/redis
 ```
 
-不要把具体版本号直接写进 `cli-bin`。后续升级只切换 `current` 软链接，配置无需修改。
+Redis CLI 会自动派生为 `/opt/redis/current/bin/redis-cli`。不要把具体版本号写入其他配置；后续升级只切换 `current` 软链接。
 
 ## 8. 场景二：准备没有 Redis 的新服务器
 
@@ -324,14 +217,40 @@ agent:
 - 不需要提前安装 Redis；
 - 不需要提前创建 `/opt/redis/current`；
 - 不需要提前创建正式 Redis/Sentinel 配置文件；
-- `/opt/redis/conf`、`/opt/redis/backup` 和 `/opt/redis` 必须已经存在并可写；
-- `agent.redis.cli-bin` 仍配置 `/opt/redis/current/bin/redis-cli`；
+- 执行器会从 `agent.operation.base-dir` 自动创建 `conf`、`backup` 等受管目录；
+- Redis CLI 固定派生为 `/opt/redis/current/bin/redis-cli`；
 - 启动阶段允许 `redis-cli` 文件不存在；
 - 真正执行需要 CLI 的运维任务时，会动态检查文件存在、是普通文件且可执行。
 
 执行器启动后应只完成注册和心跳，不应产生 Redis 实例绑定。版本、配置和 `current` 软链接会在服务器切换任务中创建。
 
-## 9. 配置 systemd
+## 9. 配置三个独立的 systemd 服务
+
+Redis、Sentinel 和执行器必须分别由三个 systemd 单元管理。这样停止、更新或卸载执行器时，只会结束执行器自己的 Java 进程，不会向 Redis/Sentinel 发送终止信号。
+
+### 9.1 自动安装 JAR 内置的 Redis/Sentinel 服务单元
+
+执行器以 `root` 启动时，会自动从 JAR 原子安装：
+
+```text
+/etc/systemd/system/redis-managed.service
+/etc/systemd/system/sentinel-managed.service
+```
+
+文件固定为 `root:root`、权限 `0644`。只有内容发生变化时才会替换文件并执行 `systemctl daemon-reload`；内容相同时不会重复加载。安装阶段只准备服务定义，不会自动启动、停止或重启 Redis/Sentinel。安装目录不可写、JAR 缺少资源或 `daemon-reload` 失败时，执行器会给出明确错误并阻止启动。
+
+当 `base-dir` 为 `/opt/redis` 时，服务单元会使用：
+
+```text
+/opt/redis/current/bin/redis-server
+/opt/redis/current/bin/redis-sentinel
+/opt/redis/conf/redis.conf
+/opt/redis/conf/sentinel.conf
+```
+
+服务单元由模板根据已经校验的根目录生成。修改 `base-dir` 后，执行器会同步更新服务文件并执行 `daemon-reload`，但不会自动重启生产实例。Redis/Sentinel以前台模式运行，由 systemd 直接跟踪主进程；同一根目录内升级 Redis 只切换 `current` 软链接。
+
+### 9.2 创建执行器服务单元
 
 ```bash
 sudo vi /etc/systemd/system/redis-monitor-agent.service
@@ -347,10 +266,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=redisops
-Group=redisops
+User=root
+Group=root
 WorkingDirectory=/opt/redis/agent
-ExecStart=/usr/bin/java -jar /opt/redis/agent/redis-monitor-agent.jar --spring.config.additional-location=file:/opt/redis/agent/application.yml
+ExecStart=/usr/bin/java -jar /opt/redis/agent/redis-monitor-agent.jar
 Restart=on-failure
 RestartSec=5
 SuccessExitStatus=143
@@ -361,7 +280,7 @@ WantedBy=multi-user.target
 
 若 `command -v java` 不是 `/usr/bin/java`，修改 `ExecStart`。
 
-加载并启动：
+加载配置并只启动执行器：
 
 ```bash
 sudo systemctl daemon-reload
@@ -369,10 +288,26 @@ sudo systemctl enable --now redis-monitor-agent
 sudo systemctl status redis-monitor-agent --no-pager
 ```
 
+不要为了隔离进程给执行器配置 `KillMode=process`。三个独立服务单元本身已经完成进程隔离，执行器保持 systemd 默认的进程组清理策略即可。
+
+### 9.3 已有生产 Redis 的首次接管
+
+如果 Redis/Sentinel 当前由人工命令或旧执行器启动，安装服务单元后不要直接执行 `systemctl start redis-managed sentinel-managed`，否则会重复启动并争抢端口。
+
+第一次通过平台执行停止操作时，脚本会先正常关闭当前实例，再将对应 systemd 单元收敛为停止状态；随后第一次通过平台执行启动操作时，脚本会启用并启动独立服务单元。完成这次停启后，实例就由 systemd 正式接管。
+
+如果脚本发现端口上的 Redis/Sentinel 正在运行，但相应服务单元不是 `active`，启动操作会明确报错并拒绝重复启动。应先安排维护窗口完成一次停止、启动，不要强制杀进程。
+
+### 9.4 新服务器首次部署
+
+新服务器启动执行器后会自动安装两个服务单元，但不会提前启用或启动它们。服务器切换任务准备好版本、配置和 `current` 后，启动脚本才会执行 `systemctl enable` 和 `systemctl start`。
+
 查看日志：
 
 ```bash
 sudo journalctl -u redis-monitor-agent -f
+sudo journalctl -u redis-managed -f
+sudo journalctl -u sentinel-managed -f
 ```
 
 ## 10. 启动验收
@@ -382,6 +317,25 @@ sudo journalctl -u redis-monitor-agent -f
 ```bash
 ss -lntp | grep 9101
 ```
+
+已由独立服务接管的生产节点还应检查：
+
+```bash
+sudo systemctl status redis-managed --no-pager
+sudo systemctl status sentinel-managed --no-pager
+sudo systemctl status redis-monitor-agent --no-pager
+```
+
+停止执行器不会影响另外两个服务。可在维护验证时执行：
+
+```bash
+sudo systemctl stop redis-monitor-agent
+sudo systemctl is-active redis-managed
+sudo systemctl is-active sentinel-managed
+sudo systemctl start redis-monitor-agent
+```
+
+中间两条命令都应输出 `active`。
 
 ### 10.2 检查平台注册和心跳
 
@@ -410,13 +364,13 @@ ss -lntp | grep 9101
 ### 10.3 检查运维目录权限
 
 ```bash
-sudo -u redisops test -r /opt/redis/scripts
-sudo -u redisops test -x /opt/redis/scripts
-sudo -u redisops test -w /opt/redis/packages
-sudo -u redisops test -w /opt/redis/configfiles
-sudo -u redisops test -w /opt/redis/versions
-sudo -u redisops test -w /opt/redis/conf
-sudo -u redisops test -w /opt/redis/backup
+sudo test -r /opt/redis/scripts
+sudo test -x /opt/redis/scripts
+sudo test -w /opt/redis/packages
+sudo test -w /opt/redis/configfiles
+sudo test -w /opt/redis/versions
+sudo test -w /opt/redis/conf
+sudo test -w /opt/redis/backup
 ```
 
 没有输出且退出码为 `0` 即为通过。
@@ -445,28 +399,42 @@ sudo cp /opt/redis/agent/redis-monitor-agent.jar \
 
 ```bash
 sudo systemctl stop redis-monitor-agent
-sudo install -o redisops -g redisops -m 0640 \
+sudo install -o root -g root -m 0640 \
   /tmp/redis-monitor-agent.jar \
   /opt/redis/agent/redis-monitor-agent.jar
+
 sudo systemctl start redis-monitor-agent
 sudo systemctl status redis-monitor-agent --no-pager
 ```
 
-不要删除 `agent-token.dat`。删除后执行器会重新注册。
+执行器启动时会自动同步两个服务单元。更新执行器 JAR 和重新加载服务单元不会停止 Redis/Sentinel。不要删除 `agent-token.dat`，删除后执行器会重新注册。
 
 ## 13. 常见启动失败
 
 ### 报错固定脚本不存在或不可读
 
-确认 `/opt/redis/scripts` 中恰好准备了第 5 节列出的六个脚本，并检查权限和换行符。
+确认执行器账户能够写入 `agent.operation.base-dir` 派生的 `scripts` 目录。脚本由 JAR 自动释放，
+如果仍然缺失，还需要检查 JAR 中是否包含 `scripts/*.sh`。
+
+### 报错 systemd 服务单元无法安装或 daemon-reload 失败
+
+确认服务器使用 systemd、执行器服务配置为 `User=root`，并检查：
+
+```bash
+ls -ld /etc/systemd/system
+systemctl --version
+sudo systemctl daemon-reload
+```
+
+执行器只会管理 `redis-managed.service` 和 `sentinel-managed.service` 两个固定文件，不会根据外部配置写入其他系统路径。
 
 ### 报错路径必须是绝对路径
 
-检查 `agent.operation.*`、Redis/Sentinel 配置文件、备份文件和 `agent.redis.cli-bin`，不能使用相对路径。
+检查 `agent.operation.base-dir`，不能使用相对路径。
 
 ### 报错路径包含首尾空格、`.` 或 `..`
 
-直接修正 `application.yml`。执行器不会自动修正错误配置。
+修正项目内置的 `application.yml` 并重新构建 JAR。执行器不会自动修正错误配置。
 
 ### 报错目录不存在、不可读、不可写或不可访问
 
@@ -476,15 +444,6 @@ sudo systemctl status redis-monitor-agent --no-pager
 namei -l /opt/redis/versions
 ```
 
-### 报错正式配置与备份配置位于同一目录
-
-保持：
-
-```text
-正式配置：/opt/redis/conf
-可信备份：/opt/redis/backup
-```
-
 ### 运维任务报 redis-cli 不存在或不可执行
 
 已有生产 Redis 的服务器检查：
@@ -492,10 +451,22 @@ namei -l /opt/redis/versions
 ```bash
 readlink -f /opt/redis/current
 ls -l /opt/redis/current/bin/redis-cli
-sudo -u redisops test -x /opt/redis/current/bin/redis-cli
+sudo test -x /opt/redis/current/bin/redis-cli
 ```
 
 新服务器首次部署 Redis 前出现文件不存在是允许的，但在需要执行 CLI 的运维步骤前必须已经部署版本并建立 `current`。
+
+### 报错 Redis 或 Sentinel 已运行但不属于独立服务单元
+
+说明端口上的实例仍是人工命令或旧执行器启动的进程。不要再次启动。安排维护窗口，先通过平台执行一次停止，再执行一次启动，让 `redis-managed.service` 和 `sentinel-managed.service` 正式接管。
+
+排查命令：
+
+```bash
+sudo systemctl is-active redis-managed
+sudo systemctl is-active sentinel-managed
+ps -eo pid,ppid,user,args | grep -E '[r]edis-server|[r]edis-sentinel'
+```
 
 ### 执行器注册失败
 
@@ -503,16 +474,19 @@ sudo -u redisops test -x /opt/redis/current/bin/redis-cli
 
 ## 14. 执行器投产检查清单
 
-- [ ] Java 8、bash、gcc、make、tar、gzip 已安装；
-- [ ] JAR 和六个脚本已安装；
-- [ ] 六个脚本是 Unix 换行符且权限正确；
-- [ ] `/opt/redis` 下全部父目录已经一次性创建；
-- [ ] 外置 `application.yml` 已填写并设置为 `600`；
+- [ ] Java 8、bash、gcc、make、tar、gzip、systemd 已安装；
+- [ ] JAR 已安装，六个脚本已由 JAR 自动释放；
+- [ ] `agent.operation.base-dir` 是经过核对的干净绝对路径；
+- [ ] `/opt/redis` 和 `/opt/redis/agent` 基础目录权限正确；
+- [ ] 受管运维目录已由执行器自动创建；
+- [ ] JAR 内置配置已经与目标环境核对一致；
 - [ ] 平台地址、注册码、本机 IP 和执行器端口正确；
 - [ ] Redis/Sentinel 地址、密码和服务名称正确；
-- [ ] 正式配置目录与备份目录不同；
 - [ ] 每台服务器使用独立 Token 文件；
-- [ ] systemd 服务已启用并正常运行；
+- [ ] `redis-managed.service` 和 `sentinel-managed.service` 已由执行器自动安装；
+- [ ] `redis-monitor-agent.service` 已启用并正常运行；
+- [ ] 已有生产 Redis：维护窗口内完成一次停止、启动，由两个独立服务单元接管；
+- [ ] 停止执行器后 Redis/Sentinel 仍保持 `active`；
 - [ ] `9101` 端口已监听；
 - [ ] 平台与执行器网络双向可达；
 - [ ] 已有生产 Redis：正式配置、可信备份和 `current` 软链接已准备；

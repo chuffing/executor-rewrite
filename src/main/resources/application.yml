@@ -81,18 +81,11 @@ agent:
     timeout: 2000
 
     service-name:
-    # Redis正式配置文件；Java执行脚本时会把这里的值注入子进程。
-    config-file: /opt/redis/conf/redis.conf
     # 预检查使用的数据目录，同时作为启动脚本允许创建运行子目录的受控根目录。
     # Redis实际数据位置仍由redis.conf中的dir等参数决定，两者须保持一致。
     data-dir: /opt/redis/data
     # redis.conf中的logfile父目录必须位于该受控根目录下。
     log-dir: /opt/redis/logs
-    # 停止Redis和Sentinel时使用；必须填写稳定的绝对路径，不依赖服务器PATH。
-    # 首次纳管已有Redis时，current应指向当前实际安装目录；新服务器首次部署前允许该文件不存在。
-    cli-bin: /opt/redis/current/bin/redis-cli
-    # Redis可信备份配置；DEPLOY_CONFIG成功时同步更新。
-    backup-file: /opt/redis/backup/redis.conf
 
     pool:
       max-total: 5
@@ -116,28 +109,16 @@ agent:
 
     # Sentinel连接超时，单位毫秒。
     timeout: 2000
-    # Sentinel正式配置文件；Java执行脚本时会把这里的值注入子进程。
-    # 配置文件须允许Sentinel正常重写。
-    config-file: /opt/redis/conf/sentinel.conf
     # sentinel.conf中的dir和logfile必须位于下面两个受控根目录下。
     data-dir: /opt/redis/data
     log-dir: /opt/redis/logs
-    # Sentinel可信备份配置；DEPLOY_CONFIG成功时同步更新。
-    backup-file: /opt/redis/backup/sentinel.conf
 
-  # 运维操作：目录示例仅用于开发，生产路径以服务器实际环境为准。
-  # 不会在执行器启动或主机预检查时自动创建这些根目录。
+  # 运维操作：所有固定路径都由唯一的绝对根目录派生。
+  # 配置通过校验后，执行器会创建受管目录、释放脚本并安装systemd单元。
   operation:
-    # 固定Shell脚本目录，须事先准备六个已实现脚本。
-    script-dir: /opt/redis/scripts
-    # Redis源码包暂存根目录，须事先存在；Java只自动创建其下staging及任务目录。
-    package-dir: /opt/redis/packages/
-    # Redis与Sentinel配置文件的暂存根目录，须事先存在。
-    config-file-dir: /opt/redis/configfiles
-    # 各版本正式安装根目录，须事先存在；源码编译部署脚本创建{targetVersion}/bin。
-    install-dir: /opt/redis/versions/
-    # 当前版本软链接路径，不是真实目录；SWITCH_VERSION负责首次创建或切换。
-    current-dir: /opt/redis/current
+    # 必须是无空白、无冗余分隔符、无.或..路径段的绝对路径，不能使用文件系统根目录。
+    # scripts、packages、configfiles、versions、current、conf、backup及redis-cli路径均由此派生。
+    base-dir: /opt/redis
 
     # 版本部署开始前，版本安装目录所在文件系统要求的最低可用空间，默认2 GiB。
     # 该值是部署前安全门槛，不代表对后续磁盘空间的绝对保证。

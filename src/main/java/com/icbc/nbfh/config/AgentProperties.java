@@ -110,9 +110,6 @@ public class AgentProperties {
         /** Redis 文件及服务配置。 */
         private String serviceName;
 
-        @NotBlank(message = "Redis配置文件路径不能为空")
-        private String configFile;
-
         /** Redis运行数据的受控根目录，启动脚本只允许在该目录下创建子目录。 */
         @NotBlank(message = "Redis数据根目录不能为空")
         private String dataDir;
@@ -120,13 +117,6 @@ public class AgentProperties {
         /** Redis运行日志的受控根目录。 */
         @NotBlank(message = "Redis日志根目录不能为空")
         private String logDir = "/opt/redis/logs";
-
-        /** 停止Redis和Sentinel时使用的redis-cli绝对路径。 */
-        @NotBlank(message = "redis-cli路径不能为空")
-        private String cliBin = "/opt/redis/current/bin/redis-cli";
-
-        @NotBlank(message = "Redis备份配置文件路径不能为空")
-        private String backupFile;
 
         /** Redis 连接池。 */
         private PoolConfig pool = new PoolConfig();
@@ -168,9 +158,6 @@ public class AgentProperties {
          */
         private List<String> nodes = new ArrayList<>();
 
-        @NotBlank(message = "Sentinel配置文件路径不能为空")
-        private String configFile;
-
         /** Sentinel运行数据的受控根目录。 */
         @NotBlank(message = "Sentinel数据根目录不能为空")
         private String dataDir = "/opt/redis/data";
@@ -179,33 +166,15 @@ public class AgentProperties {
         @NotBlank(message = "Sentinel日志根目录不能为空")
         private String logDir = "/opt/redis/logs";
 
-        @NotBlank(message = "Sentinel备份配置文件路径不能为空")
-        private String backupFile;
     }
 
 
     @Data
     public static class OperationConfig {
 
-        /** 固定 Shell 脚本目录。 */
-        @NotBlank(message = "Shell脚本目录不能为空")
-        private String scriptDir;
-
-        /** Redis源码包暂存目录。 */
-        @NotBlank(message = "Redis源码包目录不能为空")
-        private String packageDir = "/opt/redis/packages/";
-
-        /** Redis与Sentinel配置文件的暂存根目录。 */
-        @NotBlank(message = "配置文件暂存目录不能为空")
-        private String configFileDir;
-
-        /** Redis各版本正式安装目录。 */
-        @NotBlank(message = "Redis版本安装目录不能为空")
-        private String installDir = "/opt/redis/versions/";
-
-        /** 当前Redis版本软链接路径，预留给版本切换。 */
-        @NotBlank(message = "Redis当前版本软链接路径不能为空")
-        private String currentDir = "/opt/redis/current";
+        /** 所有固定运维路径的唯一绝对根目录。 */
+        @NotBlank(message = "运维根目录不能为空")
+        private String baseDir = "/opt/redis";
 
         /** 预检查要求的最低磁盘可用空间，默认2 GiB。 */
         @Min(value = 1, message = "最低磁盘可用空间必须大于0")
